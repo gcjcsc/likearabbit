@@ -1,6 +1,6 @@
 // MCF herd and pedigree app: a password-protected JSON API over the D1 database, plus the static app in ./public
 
-const RABBIT_FIELDS = ["name", "ear", "sex", "breed", "color", "genotype", "weight", "dob", "reg", "gc", "legs", "breeder", "status", "acquired", "notes", "sire_id", "dam_id", "litter_id", "left_on", "left_reason", "left_to", "price"];
+const RABBIT_FIELDS = ["name", "ear", "tattoo", "sex", "breed", "color", "genotype", "weight", "dob", "reg", "gc", "legs", "breeder", "status", "acquired", "notes", "sire_id", "dam_id", "litter_id", "left_on", "left_reason", "left_to", "price"];
 const LITTER_FIELDS = ["sire_id", "dam_id", "bred_on", "kindled_on", "born", "alive", "notes"];
 const ID_FIELDS = new Set(["sire_id", "dam_id", "litter_id"]);
 const COUNT_FIELDS = new Set(["born", "alive"]);

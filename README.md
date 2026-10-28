@@ -3,7 +3,7 @@
 Herd and pedigree records for MCF Rabbitry's Rex rabbits.
 
 - **Herd**: every rabbit you own, split into bucks and does, with age, color and parents. Litters due soon show at the top.
-- **Rabbit pages**: details, a four-generation pedigree tree, offspring and litters. Ancestors that appear more than once are marked (×2), and the inbreeding coefficient (COI) is worked out from every ancestor on record. Click an empty box in the tree to add a missing sire or dam.
+- **Rabbit pages**: details (including ear # and tattoo), a four-generation pedigree tree, offspring and litters. Ancestors that appear more than once are marked (×2), and the inbreeding coefficient (COI) is worked out from every ancestor on record. Click an empty box in the tree to add a missing sire or dam.
 - **Share pedigree PDF**: makes a one-page, landscape, letter-size pedigree PDF with a signature line. On an iPhone it opens the share sheet, so you can send it by text, email or AirDrop, save it to Files, or print it. On a computer it downloads.
 - **Retire**: when a rabbit is sold, given away, dies or is culled, record the date (plus the buyer and price for a sale). They leave the herd lists and breeding pickers but keep their pedigree, and they appear under **Past rabbits** at the bottom of the herd page. Return to the herd undoes it.
 - **Litters**: record a breeding and the due date (31 days) is shown. Then fill in kindling and kit counts, and "Add kits to the herd" creates each kit with its sire, dam and birth date already set.
