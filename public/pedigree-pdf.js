@@ -90,7 +90,7 @@ const ancestorBox = (doc, r, gen, i, ctx) => {
 
   const lines = [
     r.color,
-    join(r.ear && `Ear ${r.ear}`, r.dob && ctx.fmtDate(r.dob)),
+    join(r.ear && `Ear ${r.ear}`, r.tattoo && `Tattoo ${r.tattoo}`, r.dob && ctx.fmtDate(r.dob)),
     r.genotype,
     join(r.weight, r.reg && `Reg ${r.reg}`, r.gc && `GC ${r.gc}`, r.legs && `Legs ${r.legs}`),
   ].filter(Boolean);
@@ -109,6 +109,7 @@ const subjectBox = (doc, r, ctx) => {
   const { x, w } = COLS[0];
   const rows = [
     ["Ear #", r.ear],
+    ["Tattoo", r.tattoo],
     ["Sex", r.sex === "buck" ? "Buck" : r.sex === "doe" ? "Doe" : ""],
     ["Breed", r.breed],
     ["Color", r.color],

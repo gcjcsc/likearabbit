@@ -140,6 +140,7 @@ const treeBox = (r, { slotChild, slotRole, counts, link = true }) => {
   const lines = [
     r.color && `<span>${esc(r.color)}</span>`,
     r.ear && `<span>Ear ${esc(r.ear)}</span>`,
+    r.tattoo && `<span>Tattoo ${esc(r.tattoo)}</span>`,
     r.genotype && `<span class="geno">${esc(r.genotype)}</span>`,
     [r.weight, r.dob && fmtDate(r.dob)].filter(Boolean).length && `<span>${esc([r.weight, fmtDate(r.dob)].filter(Boolean).join(" · "))}</span>`,
     [r.reg && `Reg ${r.reg}`, r.gc && `GC ${r.gc}`, r.legs && `Legs ${r.legs}`].filter(Boolean).length &&
@@ -229,12 +230,12 @@ const viewAll = (params) => {
   const needle = q.toLowerCase();
   const list = rabbits
     .filter((r) => !status || r.status === status)
-    .filter((r) => !needle || [r.name, r.ear, r.color, r.breeder].some((v) => v.toLowerCase().includes(needle)))
+    .filter((r) => !needle || [r.name, r.ear, r.tattoo, r.color, r.breeder].some((v) => v.toLowerCase().includes(needle)))
     .sort(byName);
   app.innerHTML = `
     <h1>All rabbits</h1>
     <form class="filters" id="filters">
-      <input type="search" name="q" value="${esc(q)}" placeholder="Search name, ear #, color, breeder" aria-label="Search">
+      <input type="search" name="q" value="${esc(q)}" placeholder="Search name, ear #, tattoo, color, breeder" aria-label="Search">
       <select name="status" aria-label="Status">
         <option value="">Any status</option>
         ${Object.entries(STATUS_LABELS).map(([v, l]) => `<option value="${v}" ${v === status ? "selected" : ""}>${l}</option>`).join("")}
@@ -286,6 +287,7 @@ const viewRabbit = (id) => {
           ${r.sex ? `<span class="chip ${r.sex}">${sexLabel(r)}</span>` : ""}
           <span class="chip">${statusLabel(r)}</span>
           ${r.ear ? `<span class="chip">Ear ${esc(r.ear)}</span>` : ""}
+          ${r.tattoo ? `<span class="chip">Tattoo ${esc(r.tattoo)}</span>` : ""}
         </p>
       </div>
       <div class="actions">
@@ -460,7 +462,7 @@ const viewForm = (id, params) => {
   const child = byId.get(Number(params.get("child")));
   const role = params.get("as");
   const r = existing || {
-    name: "", ear: "", sex: role === "sire" ? "buck" : role === "dam" ? "doe" : "", breed: "Rex", color: "", genotype: "", weight: "",
+    name: "", ear: "", tattoo: "", sex: role === "sire" ? "buck" : role === "dam" ? "doe" : "", breed: "Rex", color: "", genotype: "", weight: "",
     dob: "", reg: "", gc: "", legs: "", breeder: "", status: child ? "ancestor" : "herd", acquired: "", notes: "", sire_id: null, dam_id: null,
   };
 
@@ -470,6 +472,7 @@ const viewForm = (id, params) => {
       <div class="form-grid">
         ${field("Name", "name", r.name, 'autocomplete="off"')}
         ${field("Ear #", "ear", r.ear, 'autocomplete="off"')}
+        ${field("Tattoo", "tattoo", r.tattoo, 'autocomplete="off"')}
         <label>Sex<select name="sex">
           <option value="" ${!r.sex ? "selected" : ""}>Not sexed yet</option>
           <option value="buck" ${r.sex === "buck" ? "selected" : ""}>Buck</option>
