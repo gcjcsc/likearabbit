@@ -75,11 +75,11 @@ Then open http://localhost:8787 and sign in with the password in `.dev.vars`.
 
 ## Automatic deploys
 
-`.github/workflows/deploy.yml` deploys every change to `main` (database migrations, then the Worker). It needs one repository secret:
+Cloudflare Workers Builds deploys every change to `main`. In the Cloudflare dashboard under **Workers & Pages → likearabbit → Settings → Build**:
 
-1. In Cloudflare: **My Profile → API Tokens → Create Token → Edit Cloudflare Workers** template. Add these permissions too: **Account · D1 · Edit** and **Account · Workers AI · Read**. Create it and copy the token.
-2. In GitHub: **likearabbit → Settings → Secrets and variables → Actions → New repository secret**, named `CLOUDFLARE_API_TOKEN`, with the token as its value.
-3. In Cloudflare: **Workers & Pages → likearabbit → Settings → Build**, disconnect the Git repository, so Cloudflare's own build (which was failing) doesn't run as well.
+- **Deploy command**: `npm run deploy` (applies database migrations to both databases, then deploys). Plain `npx wrangler deploy` skips the migrations.
+- **Non-production branch deploy command**: `npx wrangler versions upload` (so other branches never touch the live database).
+- **API token**: if builds fail instantly with no log, the token was deleted or rolled. Choose **Create new token**, save, then retry the build.
 
 To deploy by hand instead, run `npm run deploy` from a computer.
 
