@@ -1,0 +1,13 @@
+{
+  "name": "likearabbit",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler d1 migrations apply DB --local && wrangler dev",
+    "seed": "node tools/build-seed.mjs",
+    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "4.154.0"
+  }
+}

@@ -1,0 +1,21 @@
+// Cloudflare Workers config: src/worker.js checks the password and answers /api from the D1 database,
+// then serves the app in ./public
+{
+  "name": "likearabbit",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "likearabbit",
+      "database_id": "57188787-c3de-4a15-80e3-b36f0aa8cab3",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "observability": { "enabled": true }
+}
