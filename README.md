@@ -4,7 +4,8 @@ Herd and pedigree records for MCF Rabbitry's Rex rabbits.
 
 - **Herd**: every rabbit you own, split into bucks and does, with age, color and parents. Litters due soon show at the top.
 - **Rabbit pages**: details, a four-generation pedigree tree, offspring and litters. Ancestors that appear more than once are marked (×2), and the inbreeding coefficient (COI) is worked out from every ancestor on record. Click an empty box in the tree to add a missing sire or dam.
-- **Print pedigree**: a standard landscape, letter-size pedigree with a signature line.
+- **Share pedigree PDF**: makes a one-page, landscape, letter-size pedigree PDF with a signature line. On an iPhone it opens the share sheet, so you can send it by text, email or AirDrop, save it to Files, or print it. On a computer it downloads.
+- **Retire**: when a rabbit is sold, given away, dies or is culled, record the date (plus the buyer and price for a sale). They leave the herd lists and breeding pickers but keep their pedigree, and they appear under **Past rabbits** at the bottom of the herd page. Return to the herd undoes it.
 - **Litters**: record a breeding and the due date (31 days) is shown. Then fill in kindling and kit counts, and "Add kits to the herd" creates each kit with its sire, dam and birth date already set.
 - **Plan a pairing**: pick a buck and a doe to see the kits' pedigree and COI before you breed.
 - **Backup**: ⋯ → Download a backup saves everything as a JSON file.
@@ -26,6 +27,7 @@ It's a Cloudflare Worker (`src/worker.js`) with a D1 database. The app itself is
 
 - `migrations/0001_init.sql`: the tables
 - `migrations/0002_seed.sql`: the starting herd, generated from `tools/seed-data.mjs` by `npm run seed`
+- `public/pedigree-pdf.js`: draws the pedigree PDF with jsPDF (`public/vendor/`, MIT license)
 - `public/sw.js`: the offline copy; `public/manifest.webmanifest` and `public/icons/`: the home-screen app (the PNGs are made from `icon.svg` by `node tools/make-icons.cjs`)
 
 ## Set up on Cloudflare (once)

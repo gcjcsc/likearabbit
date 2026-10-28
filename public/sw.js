@@ -1,8 +1,8 @@
 // Keeps the app usable with no signal: everything is fetched fresh when online and the last good copy
 // is saved, so the herd (as of the last time it loaded) still opens offline. Saving changes needs a connection.
 
-const CACHE = "mcf-v1";
-const SHELL = ["/", "/app.js", "/styles.css", "/favicon.svg", "/manifest.webmanifest", "/icons/apple-touch-icon.png"];
+const CACHE = "mcf-v2";
+const SHELL = ["/", "/app.js", "/styles.css", "/favicon.svg", "/manifest.webmanifest", "/icons/apple-touch-icon.png", "/pedigree-pdf.js", "/vendor/jspdf.umd.min.js"];
 
 self.addEventListener("install", (event) => {
   // Signed-out installs get redirected to /login; skip those rather than caching the redirect

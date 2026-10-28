@@ -1,10 +1,16 @@
 // MCF herd and pedigree app: loads every rabbit and litter once, renders views by URL hash, and saves through /api
 
+import { pedigreePdf } from "./pedigree-pdf.js";
+
 const app = document.getElementById("app");
-const printArea = document.getElementById("print");
 
 const GESTATION_DAYS = 31;
+const RABBITRY = "MCF Rabbitry";
 const STATUS_LABELS = { herd: "In the herd", ancestor: "Pedigree only", sold: "Sold", deceased: "Deceased" };
+// Ways a rabbit leaves the herd, and the status each one files it under
+const RETIRE_REASONS = { Sold: "sold", "Gave away": "sold", Died: "deceased", Culled: "deceased" };
+const isRetired = (r) => r.status === "sold" || r.status === "deceased";
+const statusLabel = (r) => (isRetired(r) && r.left_reason) || STATUS_LABELS[r.status];
 
 let rabbits = [];
 let litters = [];
@@ -198,7 +204,23 @@ const viewHerd = () => {
     ${group("Bucks", herd.filter((r) => r.sex === "buck"))}
     ${group("Does", herd.filter((r) => r.sex === "doe"))}
     ${group("Not sexed yet", herd.filter((r) => !r.sex))}
-    ${herd.length ? "" : `<p class="muted">No rabbits in the herd yet. <a href="#/new">Add one</a>.</p>`}`;
+    ${herd.length ? "" : `<p class="muted">No rabbits in the herd yet. <a href="#/new">Add one</a>.</p>`}
+    ${pastRabbits()}`;
+};
+
+const leftSummary = (r) =>
+  [statusLabel(r), r.left_on && fmtDate(r.left_on), r.left_to && `to ${r.left_to}`, r.price && (/^\d/.test(r.price) ? `$${r.price}` : r.price)]
+    .filter(Boolean)
+    .map(esc)
+    .join(" · ");
+
+const pastRabbits = () => {
+  const past = rabbits.filter(isRetired).sort((a, b) => (b.left_on || "").localeCompare(a.left_on || ""));
+  if (!past.length) return "";
+  return `<details class="past"><summary><h2>Past rabbits <span class="count">${past.length}</span></h2></summary>
+    <ul class="past-list">${past
+      .map((r) => `<li><a href="#/rabbit/${r.id}">${esc(displayName(r))}</a> <span class="muted">${leftSummary(r)}</span></li>`)
+      .join("")}</ul></details>`;
 };
 
 const viewAll = (params) => {
@@ -225,7 +247,7 @@ const viewAll = (params) => {
         .map(
           (r) => `<tr>
             <td><a href="#/rabbit/${r.id}">${esc(displayName(r))}</a></td><td>${esc(r.ear)}</td><td>${sexLabel(r)}</td>
-            <td>${esc(r.color)}</td><td>${fmtDate(r.dob)}</td><td>${esc(r.breeder)}</td><td>${STATUS_LABELS[r.status]}</td></tr>`
+            <td>${esc(r.color)}</td><td>${fmtDate(r.dob)}</td><td>${esc(r.breeder)}</td><td>${statusLabel(r)}</td></tr>`
         )
         .join("")}</tbody>
     </table></div>`;
@@ -262,15 +284,22 @@ const viewRabbit = (id) => {
         <h1>${esc(displayName(r))}</h1>
         <p class="chips">
           ${r.sex ? `<span class="chip ${r.sex}">${sexLabel(r)}</span>` : ""}
-          <span class="chip">${STATUS_LABELS[r.status]}</span>
+          <span class="chip">${statusLabel(r)}</span>
           ${r.ear ? `<span class="chip">Ear ${esc(r.ear)}</span>` : ""}
         </p>
       </div>
       <div class="actions">
+        <button class="button primary" type="button" id="share-btn">Share pedigree PDF</button>
         <a class="button" href="#/rabbit/${r.id}/edit">Edit</a>
-        <button class="button" type="button" id="print-btn">Print pedigree</button>
+        ${r.status === "herd" ? `<button class="button" type="button" id="retire-btn">Retire…</button>` : ""}
       </div>
     </div>
+
+    ${
+      isRetired(r)
+        ? `<section class="card retired"><p><strong>${leftSummary(r)}</strong></p><button class="button" type="button" id="unretire-btn">Return to the herd</button></section>`
+        : ""
+    }
 
     <section class="card">
       <dl class="details">
@@ -309,52 +338,106 @@ const viewRabbit = (id) => {
         : ""
     }`;
 
-  document.getElementById("print-btn").addEventListener("click", () => printPedigree(r));
+  document.getElementById("share-btn").addEventListener("click", () => sharePedigree(r));
+  document.getElementById("retire-btn")?.addEventListener("click", () => retireDialog(r));
+  document.getElementById("unretire-btn")?.addEventListener("click", async () => {
+    if (!confirm(`Put ${displayName(r)} back in the herd?`)) return;
+    try {
+      await api("PUT", `/api/rabbits/${r.id}`, { status: "herd", left_on: "", left_reason: "", left_to: "", price: "" });
+      await load();
+      viewRabbit(r.id);
+    } catch (err) {
+      alert(err.message);
+    }
+  });
 };
 
-// ---- Printing: a classic landscape four-generation pedigree ----
+// ---- Retiring: sold, given away, died or culled ----
 
-const printPedigree = (r) => {
-  const cols = pedigreeColumns(r);
-  const counts = repeatsIn(cols);
-  const box = (x, role) =>
-    x
-      ? `<div class="pbox ${x.sex}"><strong>${esc(displayName(x))}</strong>
-          ${[
-            ["Ear #", x.ear],
-            ["Color", x.color],
-            ["Genotype", x.genotype],
-            ["Weight", x.weight],
-            ["DOB", fmtDate(x.dob)],
-            ["Reg #", x.reg],
-            ["GC #", x.gc],
-            ["Legs", x.legs],
-          ]
-            .filter(([, v]) => v)
-            .map(([k, v]) => `<span>${k}: ${esc(v)}</span>`)
-            .join("")}
-          ${counts.get(x.id) > 1 && x !== r ? `<span class="repeat">×${counts.get(x.id)}</span>` : ""}</div>`
-      : `<div class="pbox empty"><span>${role}</span></div>`;
-  printArea.innerHTML = `
-    <div class="psheet">
-      <header>
-        <div><h1>MCF Rabbitry</h1><p>${esc(r.breed || "Rex")} Pedigree</p></div>
-        <div class="pid">${esc(r.ear || "")}</div>
-      </header>
-      <div class="ptree">
-        ${cols
-          .map((col, g) => `<div class="pcol">${col.map((x, i) => box(x, g === 0 ? "" : i % 2 ? "Dam" : "Sire")).join("")}</div>`)
+const retireDialog = (r) => {
+  const dialog = document.createElement("dialog");
+  dialog.className = "dialog";
+  dialog.innerHTML = `
+    <form id="retire-form" class="form">
+      <h2>Retire ${esc(displayName(r))}</h2>
+      <fieldset class="reasons">
+        <legend>What happened?</legend>
+        ${Object.keys(RETIRE_REASONS)
+          .map((reason, i) => `<label><input type="radio" name="left_reason" value="${reason}" ${i === 0 ? "checked" : ""}><span>${reason}</span></label>`)
           .join("")}
+      </fieldset>
+      ${field("Date", "left_on", toISO(new Date()), 'type="date" required')}
+      <div class="form-grid" id="new-home">
+        ${field("Sold to / new owner", "left_to", "", 'autocomplete="off"')}
+        ${field("Price", "price", "", 'inputmode="decimal" placeholder="e.g. 40"')}
       </div>
-      <footer>
-        <div>
-          <p>Name: <strong>${esc(displayName(r))}</strong> · Sex: ${sexLabel(r) || "—"} · Born: ${fmtDate(r.dob) || "—"}${r.sire_id && r.dam_id ? ` · COI: ${fmtCoi(coi(r.sire_id, r.dam_id))}` : ""}</p>
-          <p>Breeder: ${esc(r.breeder || "—")} · Owner: MCF Rabbitry</p>
-        </div>
-        <p class="sign">I certify that this pedigree is correct to the best of my knowledge.<br>Signed ______________________ Date ___________</p>
-      </footer>
-    </div>`;
-  window.print();
+      <label>Note <span class="muted">(added to their notes)</span><textarea name="note" rows="2"></textarea></label>
+      <p class="error" id="retire-error" role="alert" hidden></p>
+      <div class="form-actions">
+        <button class="button primary" type="submit">Retire</button>
+        <button class="button" type="button" id="retire-cancel">Cancel</button>
+      </div>
+    </form>`;
+  document.body.append(dialog);
+  const form = dialog.querySelector("form");
+  // Buyer and price only apply when the rabbit went to someone
+  const sync = () => {
+    const reason = form.left_reason.value;
+    dialog.querySelector("#new-home").hidden = RETIRE_REASONS[reason] !== "sold";
+    form.price.closest("label").hidden = reason !== "Sold";
+  };
+  form.addEventListener("change", sync);
+  sync();
+  dialog.querySelector("#retire-cancel").addEventListener("click", () => dialog.close());
+  dialog.addEventListener("close", () => dialog.remove());
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(form));
+    const goesToSomeone = RETIRE_REASONS[data.left_reason] === "sold";
+    const note = data.note.trim();
+    try {
+      await api("PUT", `/api/rabbits/${r.id}`, {
+        status: RETIRE_REASONS[data.left_reason],
+        left_reason: data.left_reason,
+        left_on: data.left_on,
+        left_to: goesToSomeone ? data.left_to : "",
+        price: data.left_reason === "Sold" ? data.price : "",
+        ...(note && { notes: [r.notes, `${fmtDate(data.left_on)}: ${note}`].filter(Boolean).join("\n") }),
+      });
+      dialog.close();
+      await load();
+      viewRabbit(r.id);
+    } catch (err) {
+      const error = dialog.querySelector("#retire-error");
+      error.textContent = err.message;
+      error.hidden = false;
+    }
+  });
+  dialog.showModal();
+};
+
+// ---- Pedigree PDF: made on the phone and handed to the share sheet for Messages, Mail or AirDrop ----
+
+const sharePedigree = async (r) => {
+  const blob = pedigreePdf(r, { displayName, fmtDate, fmtCoi, coi, pedigreeColumns, repeatsIn, rabbitry: RABBITRY });
+  const filename = `${displayName(r).replace(/[^\w\s'&-]+/g, "").trim() || "Rabbit"} pedigree.pdf`;
+  const file = new File([blob], filename, { type: "application/pdf" });
+  if (navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: `${displayName(r)} pedigree` });
+      return;
+    } catch (err) {
+      // Closing the share sheet isn't an error; anything else falls back to downloading
+      if (err.name === "AbortError") return;
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), { href: url, download: filename });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60e3);
 };
 
 // ---- Add and edit ----
@@ -408,6 +491,15 @@ const viewForm = (id, params) => {
         <label>Sire<select name="sire_id">${parentOptions("buck", r.sire_id, existing?.id)}</select></label>
         <label>Dam<select name="dam_id">${parentOptions("doe", r.dam_id, existing?.id)}</select></label>
       </div>
+      <div class="form-grid" id="left-fields">
+        <label>What happened<select name="left_reason">
+          <option value="">—</option>
+          ${Object.keys(RETIRE_REASONS).map((x) => `<option ${x === r.left_reason ? "selected" : ""}>${x}</option>`).join("")}
+        </select></label>
+        ${field("Left the herd on", "left_on", r.left_on || "", 'type="date"')}
+        ${field("Sold to / new owner", "left_to", r.left_to || "")}
+        ${field("Price", "price", r.price || "", 'inputmode="decimal"')}
+      </div>
       <label>Notes<textarea name="notes" rows="3">${esc(r.notes)}</textarea></label>
       <datalist id="colors">${[...new Set(rabbits.map((x) => x.color).filter(Boolean))].sort().map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
       <datalist id="breeders">${[...new Set(rabbits.map((x) => x.breeder).filter(Boolean))].sort().map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
@@ -421,6 +513,9 @@ const viewForm = (id, params) => {
 
   const form = document.getElementById("rabbit-form");
   const error = document.getElementById("form-error");
+  const syncLeft = () => (document.getElementById("left-fields").hidden = !["sold", "deceased"].includes(form.status.value));
+  form.status.addEventListener("change", syncLeft);
+  syncLeft();
   const fail = (err) => {
     error.textContent = err.message;
     error.hidden = false;
