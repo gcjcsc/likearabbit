@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>MCF Rabbitry</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/"><img src="/favicon.svg" alt="" width="28" height="28"> MCF Rabbitry</a>
+    <nav class="nav">
+      <a href="#/" data-nav="herd">Herd</a>
+      <a href="#/litters" data-nav="litters">Litters</a>
+      <a href="#/pair" data-nav="pair">Plan a pairing</a>
+      <a href="#/all" data-nav="all">All rabbits</a>
+    </nav>
+    <div class="topbar-actions">
+      <a class="button primary" href="#/new">+ Add rabbit</a>
+      <details class="menu">
+        <summary aria-label="More">⋯</summary>
+        <div class="menu-list">
+          <a href="/api/export">Download a backup</a>
+          <button type="button" id="logout">Sign out</button>
+        </div>
+      </details>
+    </div>
+  </header>
+  <main id="app" class="page"><p class="muted">Loading…</p></main>
+  <div id="print" class="print-only"></div>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
