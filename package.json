@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "wrangler d1 migrations apply DB --local && wrangler d1 migrations apply PHOTOS --local && wrangler dev",
     "seed": "node tools/build-seed.mjs",
-    "deploy": "wrangler d1 migrations apply DB --remote && wrangler d1 migrations apply PHOTOS --remote && wrangler deploy"
+    "deploy": "wrangler d1 migrations apply DB --remote && wrangler d1 migrations apply PHOTOS --remote && wrangler deploy",
+    "migrate:preview": "wrangler d1 migrations apply DB --remote -c wrangler.preview-migrations.jsonc && wrangler d1 migrations apply PHOTOS --remote -c wrangler.preview-migrations.jsonc"
   },
   "devDependencies": {
     "wrangler": "4.154.0"

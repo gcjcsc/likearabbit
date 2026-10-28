@@ -78,7 +78,7 @@ Then open http://localhost:8787 and sign in with the password in `.dev.vars`.
 Cloudflare Workers Builds deploys every change to `main`. In the Cloudflare dashboard under **Workers & Pages → likearabbit → Settings → Build**:
 
 - **Deploy command**: `npm run deploy` (applies database migrations to both databases, then deploys). Plain `npx wrangler deploy` skips the migrations.
-- **Non-production branch deploy command**: `npx wrangler versions upload` (so other branches never touch the live database).
+- **Preview (non-production branch) command**: `npx wrangler preview`. Previews use their own empty databases (`likearabbit-preview` and `likearabbit-photos-preview`, set in the `previews` block of `wrangler.jsonc`), never the real herd. They need the sign-in password set once with `npx wrangler preview base-config secret put APP_PASSWORD`. When a change adds a migration, run `npm run migrate:preview` so previews get it too.
 - **API token**: if builds fail instantly with no log, the token was deleted or rolled. Choose **Create new token**, save, then retry the build.
 
 To deploy by hand instead, run `npm run deploy` from a computer.
