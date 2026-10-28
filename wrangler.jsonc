@@ -13,8 +13,7 @@
     {
       "binding": "DB",
       "database_name": "likearabbit",
-      // Replace with the id that `npx wrangler d1 create likearabbit` prints (see README)
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "57188787-c3de-4a15-80e3-b36f0aa8cab3",
       "migrations_dir": "migrations"
     }
   ],

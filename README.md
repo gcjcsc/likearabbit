@@ -34,11 +34,7 @@ It's a Cloudflare Worker (`src/worker.js`) with a D1 database. The app itself is
 npm install
 ```
 
-```bash
-npx wrangler d1 create likearabbit
-```
-
-Copy the `database_id` it prints into `wrangler.jsonc`, then:
+The `likearabbit` D1 database already exists on the Cloudflare account and its id is in `wrangler.jsonc`. Set the sign-in password, then deploy:
 
 ```bash
 npx wrangler secret put APP_PASSWORD
