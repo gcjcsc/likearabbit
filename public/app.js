@@ -200,7 +200,7 @@ const viewHerd = () => {
         .join("")}</ul></section>`
     : "";
   app.innerHTML = `
-    <h1>Herd</h1>
+    <div class="title-row"><h1>Herd</h1><div class="actions"><a class="button" href="#/scan">📷 Scan a pedigree</a></div></div>
     ${dueList}
     ${group("Bucks", herd.filter((r) => r.sex === "buck"))}
     ${group("Does", herd.filter((r) => r.sex === "doe"))}
@@ -468,6 +468,7 @@ const viewForm = (id, params) => {
 
   app.innerHTML = `
     <h1>${existing ? `Edit ${esc(displayName(existing))}` : child ? `Add ${role} of ${esc(displayName(child))}` : "Add a rabbit"}</h1>
+    ${existing || child ? "" : `<p class="muted">Have a paper pedigree? <a href="#/scan">Scan it instead</a> to add the rabbit and its ancestors in one go.</p>`}
     <form class="card form" id="rabbit-form">
       <div class="form-grid">
         ${field("Name", "name", r.name, 'autocomplete="off"')}
@@ -730,6 +731,213 @@ const viewPair = (params) => {
   });
 };
 
+// ---- Scan a paper pedigree: photo → Workers AI reads it → review and fix → save the rabbit and its ancestors ----
+
+// Slot codes match src/scan.js: S = sire, D = dam, so "SD" is the sire's dam
+const SCAN_SLOTS = ["self", "S", "D", "SS", "SD", "DS", "DD", "SSS", "SSD", "SDS", "SDD", "DSS", "DSD", "DDS", "DDD"];
+const SCAN_FIELDS = [
+  ["name", "Name"], ["ear", "Ear #"], ["color", "Color"], ["genotype", "Genotype"], ["weight", "Weight"],
+  ["dob", "Born", 'type="date"'], ["reg", "Reg #"], ["gc", "GC #"], ["legs", "Legs"], ["breeder", "Breeder"],
+];
+const parentSlots = (slot) => (slot === "self" ? ["S", "D"] : [slot + "S", slot + "D"]);
+const slotLabel = (slot) =>
+  slot === "self" ? "This rabbit" : [...slot].map((c, i) => (c === "S" ? "sire" : "dam") + (i < slot.length - 1 ? "'s" : "")).join(" ").replace(/^./, (c) => c.toUpperCase());
+const slotSex = (slot, r) => (slot === "self" ? r?.sex || "" : slot.endsWith("S") ? "buck" : "doe");
+
+let scan = null; // { photo, result, phase, error } while a scan is in progress
+
+const normEar = (v) => String(v || "").toUpperCase().replace(/\s+/g, "");
+// Rabbits already on file that look like this one: same ear number, or same name when ears don't conflict
+const findMatches = (r) => {
+  if (!r) return [];
+  const ear = normEar(r.ear);
+  const name = r.name.trim().toLowerCase();
+  return rabbits
+    .filter((x) => {
+      const xEar = normEar(x.ear);
+      if (ear && xEar) return ear === xEar;
+      return name && x.name.trim().toLowerCase() === name;
+    })
+    .slice(0, 3);
+};
+
+// Shrinks the photo (and turns it upright) so it uploads quickly
+const photoToDataUrl = async (file) => {
+  const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  const scale = Math.min(1, 1800 / Math.max(bitmap.width, bitmap.height));
+  const canvas = Object.assign(document.createElement("canvas"), { width: Math.round(bitmap.width * scale), height: Math.round(bitmap.height * scale) });
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.85);
+};
+
+const viewScan = () => {
+  if (!scan || scan.phase === "pick") {
+    app.innerHTML = `
+      <h1>Scan a pedigree</h1>
+      <section class="card scan-start">
+        <p>Take a photo of a paper pedigree, or pick one from your photos. The app reads it and fills in the rabbit and all its ancestors for you to check before anything is saved.</p>
+        <label class="button primary big-button">📷 Take or choose a photo<input type="file" id="scan-file" accept="image/*" hidden></label>
+        <ul class="muted small tips">
+          <li>Lay the page flat in good light, and fill the frame with it.</li>
+          <li>Sideways is fine. Glare and shadows across the text are not.</li>
+          <li>Several pedigrees on one page? Scan them one at a time.</li>
+        </ul>
+        ${scan?.error ? `<p class="error">${esc(scan.error)}</p>` : ""}
+      </section>`;
+    document.getElementById("scan-file").addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        scan = { phase: "reading", photo: await photoToDataUrl(file) };
+      } catch {
+        scan = { phase: "pick", error: "Couldn't open that photo. Try taking it again." };
+        return viewScan();
+      }
+      viewScan();
+      try {
+        const result = await api("POST", "/api/scan", { image: scan.photo });
+        if (!result.self) throw new Error("No rabbit was found on that page. Try a closer, sharper photo.");
+        scan = { ...scan, phase: "review", result };
+      } catch (err) {
+        scan = { phase: "pick", error: err.message };
+      }
+      if (location.hash.startsWith("#/scan")) viewScan();
+    });
+    return;
+  }
+
+  if (scan.phase === "reading" || scan.phase === "saving") {
+    app.innerHTML = `
+      <h1>Scan a pedigree</h1>
+      <section class="card scan-reading">
+        <img class="scan-photo" src="${scan.photo}" alt="Your pedigree photo">
+        <p><span class="spinner" aria-hidden="true"></span> ${scan.phase === "saving" ? "Saving…" : "Reading the pedigree… this can take up to a minute."}</p>
+      </section>`;
+    return;
+  }
+
+  const { result } = scan;
+  const found = SCAN_SLOTS.filter((s) => result[s]);
+  const card = (slot) => {
+    const r = result[slot];
+    if (!r) return `<div class="scan-slot empty"><strong>${slotLabel(slot)}</strong> <span class="muted">not on the pedigree</span></div>`;
+    const matches = findMatches(r);
+    const choice = `<select name="${slot}:action" class="scan-action" aria-label="What to do with ${slotLabel(slot)}">
+        ${matches.map((m, i) => `<option value="${m.id}" ${i === 0 ? "selected" : ""}>Use ${esc(displayName(m))}${m.ear ? ` (${esc(m.ear)})` : ""}, already on file</option>`).join("")}
+        <option value="new" ${matches.length ? "" : "selected"}>Add as a new rabbit</option>
+        ${slot === "self" ? "" : `<option value="skip">Leave out</option>`}
+      </select>`;
+    const extra =
+      slot === "self"
+        ? `<label>Sex<select name="self:sex"><option value="">Not sure</option><option value="buck" ${r.sex === "buck" ? "selected" : ""}>Buck</option><option value="doe" ${r.sex === "doe" ? "selected" : ""}>Doe</option></select></label>
+           <label>Add to<select name="self:status"><option value="herd">My herd</option><option value="ancestor">Pedigree only</option></select></label>
+           ${field("Tattoo", "self:tattoo", "")}
+           ${field("Acquired", "self:acquired", "", 'type="date"')}`
+        : "";
+    // Name, ear, color and birth date always show; other fields only when the scan found something
+    const value = (f) => (f === "breeder" && slot === "self" ? r.breeder || result.breeder : r[f]);
+    const input = ([f, label, attrs = ""]) => field(label, `${slot}:${f}`, value(f), attrs);
+    const shown = SCAN_FIELDS.filter(([f]) => ["name", "ear", "color", "dob"].includes(f) || value(f));
+    const hidden = SCAN_FIELDS.filter((x) => !shown.includes(x));
+    return `<div class="scan-slot card ${slot === "self" ? "self" : slotSex(slot)}" data-slot="${slot}">
+      <div class="scan-slot-head"><strong>${slotLabel(slot)}</strong>${choice}</div>
+      <div class="scan-fields">
+        <div class="scan-grid">${shown.map(input).join("")}${extra}</div>
+        ${hidden.length ? `<details class="scan-more"><summary>More details</summary><div class="scan-grid">${hidden.map(input).join("")}</div></details>` : ""}
+      </div>
+    </div>`;
+  };
+
+  app.innerHTML = `
+    <h1>Check the scan</h1>
+    <p class="muted">Found ${found.length} of 15 rabbits. Fix anything misread, then save. Ancestors already on file are matched so they aren't added twice.</p>
+    <details class="card scan-photo-box"><summary>Show the photo</summary><img class="scan-photo" src="${scan.photo}" alt="Your pedigree photo"></details>
+    <form id="scan-form" class="scan-form">
+      ${card("self")}
+      <h2>Parents</h2>${["S", "D"].map(card).join("")}
+      <h2>Grandparents</h2>${["SS", "SD", "DS", "DD"].map(card).join("")}
+      <h2>Great-grandparents</h2>${["SSS", "SSD", "SDS", "SDD", "DSS", "DSD", "DDS", "DDD"].map(card).join("")}
+      <p class="error" id="scan-error" role="alert" hidden></p>
+      <div class="form-actions sticky-actions">
+        <button class="button primary" type="submit">Save</button>
+        <button class="button" type="button" id="scan-again">Scan again</button>
+        <a class="button" href="#/">Cancel</a>
+      </div>
+    </form>`;
+
+  const form = document.getElementById("scan-form");
+  // Fields only matter for rabbits being added new
+  const sync = () =>
+    form.querySelectorAll(".scan-slot[data-slot]").forEach((el) => {
+      const action = form.elements[`${el.dataset.slot}:action`].value;
+      el.querySelector(".scan-fields").hidden = action !== "new";
+      el.classList.toggle("skipped", action === "skip");
+    });
+  form.addEventListener("change", sync);
+  sync();
+  document.getElementById("scan-again").addEventListener("click", () => {
+    scan = null;
+    viewScan();
+  });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(form));
+    const ids = {};
+    const madeThisScan = new Map(); // the same ancestor can appear twice in one pedigree
+    const photo = scan.photo;
+    scan = { ...scan, phase: "saving" };
+    viewScan();
+    try {
+      // Oldest generation first, so each rabbit's sire and dam already have ids
+      for (const slot of [...SCAN_SLOTS].reverse()) {
+        const action = data[`${slot}:action`];
+        if (!action || action === "skip") continue;
+        const [sireId, damId] = parentSlots(slot).map((p) => ids[p] ?? null);
+        if (action !== "new") {
+          const existing = byId.get(Number(action));
+          ids[slot] = existing.id;
+          // Fill in parents the existing record is missing, never replace ones it has
+          const fill = {};
+          if (!existing.sire_id && sireId && sireId !== existing.id) fill.sire_id = sireId;
+          if (!existing.dam_id && damId && damId !== existing.id) fill.dam_id = damId;
+          if (Object.keys(fill).length) await api("PUT", `/api/rabbits/${existing.id}`, fill).catch(() => {});
+          continue;
+        }
+        const fields = Object.fromEntries(SCAN_FIELDS.map(([f]) => [f, data[`${slot}:${f}`] || ""]));
+        const key = normEar(fields.ear) || fields.name.trim().toLowerCase();
+        if (key && madeThisScan.has(key)) {
+          ids[slot] = madeThisScan.get(key);
+          continue;
+        }
+        const saved = await api("POST", "/api/rabbits", {
+          ...fields,
+          sex: slot === "self" ? data["self:sex"] : slotSex(slot),
+          status: slot === "self" ? data["self:status"] : "ancestor",
+          tattoo: slot === "self" ? data["self:tattoo"] : "",
+          acquired: slot === "self" ? data["self:acquired"] : "",
+          notes: slot === "self" ? `Added from a scanned pedigree on ${fmtDate(toISO(new Date()))}.` : "",
+          sire_id: sireId,
+          dam_id: damId,
+        });
+        ids[slot] = saved.id;
+        if (key) madeThisScan.set(key, saved.id);
+      }
+      await load();
+      scan = null;
+      location.hash = `#/rabbit/${ids.self}`;
+    } catch (err) {
+      // Anything saved before the error stays; the review screen comes back so nothing typed is lost
+      await load().catch(() => {});
+      scan = { ...scan, phase: "review", photo };
+      viewScan();
+      const error = document.getElementById("scan-error");
+      error.textContent = `${err.message} Some rabbits may already have been saved; check All rabbits before saving again.`;
+      error.hidden = false;
+    }
+  });
+};
+
 const notFound = () => {
   app.innerHTML = `<h1>Not found</h1><p><a href="#/">Back to the herd</a></p>`;
 };
@@ -749,6 +957,7 @@ const route = () => {
   else if (section === "all") viewAll(params);
   else if (section === "pair") viewPair(params);
   else if (section === "new") viewForm(null, params);
+  else if (section === "scan") viewScan();
   else if (section === "rabbit" && parts[2] === "edit") viewForm(Number(parts[1]), params);
   else if (section === "rabbit") viewRabbit(Number(parts[1]));
   else if (section === "litters" && parts[1] === "new") {

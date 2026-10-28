@@ -1,5 +1,7 @@
 // MCF herd and pedigree app: a password-protected JSON API over the D1 database, plus the static app in ./public
 
+import { scanPedigree } from "./scan.js";
+
 const RABBIT_FIELDS = ["name", "ear", "tattoo", "sex", "breed", "color", "genotype", "weight", "dob", "reg", "gc", "legs", "breeder", "status", "acquired", "notes", "sire_id", "dam_id", "litter_id", "left_on", "left_reason", "left_to", "price"];
 const LITTER_FIELDS = ["sire_id", "dam_id", "bred_on", "kindled_on", "born", "alive", "notes"];
 const ID_FIELDS = new Set(["sire_id", "dam_id", "litter_id"]);
@@ -137,6 +139,16 @@ const api = async (request, env, path) => {
       env.DB.prepare("SELECT * FROM litters ORDER BY id"),
     ]);
     return json({ rabbits: rabbits.results, litters: litters.results });
+  }
+
+  if (path === "/api/scan" && method === "POST") {
+    const { image } = await request.json().catch(() => ({}));
+    try {
+      return json(await scanPedigree(env, image));
+    } catch (err) {
+      console.error("Scan failed:", err);
+      throw new HttpError(502, `Couldn't read that pedigree. ${err.message}`);
+    }
   }
 
   if (path === "/api/export" && method === "GET") {

@@ -17,5 +17,7 @@
       "migrations_dir": "migrations"
     }
   ],
+  // Workers AI, for reading photos of paper pedigrees (src/scan.js)
+  "ai": { "binding": "AI" },
   "observability": { "enabled": true }
 }
