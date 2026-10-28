@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rabbits for sale</title>
+  <meta name="description" content="Rex rabbits for sale, with photos and pedigrees.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="sale-page">
+  <header class="sale-header">
+    <img src="/favicon.svg" alt="" width="44" height="44">
+    <div>
+      <h1 id="rabbitry">Rabbits for sale</h1>
+      <p class="muted" id="location"></p>
+    </div>
+  </header>
+  <main class="page">
+    <p id="intro" class="sale-intro" hidden></p>
+    <div class="contact-buttons" id="contact"></div>
+    <div id="listings" class="sale-grid"><p class="muted">Loading…</p></div>
+  </main>
+  <script src="/vendor/jspdf.umd.min.js" defer></script>
+  <script src="/sale.js" type="module"></script>
+</body>
+</html>

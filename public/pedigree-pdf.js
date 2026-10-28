@@ -120,7 +120,7 @@ const subjectBox = (doc, r, ctx) => {
     ["GC #", r.gc],
     ["Legs", r.legs],
     ["Breeder", r.breeder],
-    ["COI", r.sire_id && r.dam_id ? ctx.fmtCoi(ctx.coi(r.sire_id, r.dam_id)) : ""],
+    ["COI", ctx.coi && r.sire_id && r.dam_id ? ctx.fmtCoi(ctx.coi(r.sire_id, r.dam_id)) : ""],
   ].filter(([, v]) => v);
 
   // Each row is a small label over its value, so long colors and genotypes get the full width
@@ -129,7 +129,11 @@ const subjectBox = (doc, r, ctx) => {
     doc.setFontSize(13);
     return doc.splitTextToSize(ctx.displayName(r), w - 18).slice(0, 2);
   })();
-  const h = 16 + nameLines.length * 15 + rows.length * 21 + 4;
+  // The rabbit's main photo, if it has one, scaled to fit the box width and at most 120 pt tall
+  const photo = ctx.photo;
+  const photoW = photo ? Math.min(w - 20, (120 * photo.width) / photo.height) : 0;
+  const photoH = photo ? (photoW * photo.height) / photo.width : 0;
+  const h = 16 + nameLines.length * 15 + (photo ? photoH + 8 : 0) + rows.length * 21 + 4;
   const y = slotCenter(0, 0) - h / 2;
   box(doc, x, y, w, h, r.sex);
 
@@ -139,6 +143,10 @@ const subjectBox = (doc, r, ctx) => {
     doc.text(line, x + 10, ty);
     ty += 15;
   });
+  if (photo) {
+    doc.addImage(photo.dataUrl, "JPEG", x + 10, ty - 8, photoW, photoH);
+    ty += photoH + 8;
+  }
   ty += 2;
   rows.forEach(([label, value]) => {
     doc.setFont("helvetica", "bold");
@@ -222,7 +230,7 @@ export const pedigreePdf = (subject, ctx) => {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(...COLOR.text);
-  doc.text(`Owner: ${ctx.rabbitry}`, PAGE.margin, fy + 6);
+  doc.text(ctx.transfer ? `Breeder: ${ctx.rabbitry} · ${ctx.transfer}` : `Owner: ${ctx.rabbitry}`, PAGE.margin, fy + 6);
   doc.setTextColor(...COLOR.muted);
   doc.text(`Generated ${ctx.fmtDate(new Date().toISOString().slice(0, 10))}`, PAGE.margin, fy + 19);
   if ([...ctx.counts.values()].some((n) => n > 1)) {

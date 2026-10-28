@@ -15,7 +15,38 @@
       "database_name": "likearabbit",
       "database_id": "57188787-c3de-4a15-80e3-b36f0aa8cab3",
       "migrations_dir": "migrations"
+    },
+    {
+      // Photo files only, kept apart so the herd database stays small (free plan: 500 MB per database)
+      "binding": "PHOTOS",
+      "database_name": "likearabbit-photos",
+      "database_id": "6102d109-9ba8-43b1-b174-0faaa6214b81",
+      "migrations_dir": "migrations-photos"
     }
   ],
-  "observability": { "enabled": true }
+  // Workers AI, for reading photos of paper pedigrees (src/scan.js)
+  "ai": { "binding": "AI" },
+  // Daily at 12:00 UTC (8 am Eastern in summer, 7 am in winter): reminders, plus the Sunday backup
+  "triggers": { "crons": ["0 12 * * *"] },
+  "observability": { "enabled": true },
+
+  // Branch previews (Workers Builds runs `npx wrangler preview` for branches other than main). They get their
+  // own empty databases so testing never touches the real herd. Previews don't run the daily cron, and need the
+  // APP_PASSWORD secret set once with `npx wrangler preview base-config secret put APP_PASSWORD`.
+  // New migrations reach these databases with `npm run migrate:preview`.
+  "previews": {
+    "d1_databases": [
+      {
+        "binding": "DB",
+        "database_name": "likearabbit-preview",
+        "database_id": "09639525-02dc-4778-8fe9-18aba8ac7229"
+      },
+      {
+        "binding": "PHOTOS",
+        "database_name": "likearabbit-photos-preview",
+        "database_id": "9886eaf3-ae58-4279-bc2e-99b531bc0d4a"
+      }
+    ],
+    "ai": { "binding": "AI" }
+  }
 }

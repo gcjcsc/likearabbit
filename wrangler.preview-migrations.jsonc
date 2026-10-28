@@ -1,0 +1,20 @@
+// Only for applying migrations to the branch-preview databases: `npm run migrate:preview`.
+// Must point at the same databases as the "previews" block in wrangler.jsonc.
+{
+  "name": "likearabbit",
+  "compatibility_date": "2026-10-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "likearabbit-preview",
+      "database_id": "09639525-02dc-4778-8fe9-18aba8ac7229",
+      "migrations_dir": "migrations"
+    },
+    {
+      "binding": "PHOTOS",
+      "database_name": "likearabbit-photos-preview",
+      "database_id": "9886eaf3-ae58-4279-bc2e-99b531bc0d4a",
+      "migrations_dir": "migrations-photos"
+    }
+  ]
+}
