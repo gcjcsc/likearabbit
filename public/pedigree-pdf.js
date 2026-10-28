@@ -120,7 +120,7 @@ const subjectBox = (doc, r, ctx) => {
     ["GC #", r.gc],
     ["Legs", r.legs],
     ["Breeder", r.breeder],
-    ["COI", r.sire_id && r.dam_id ? ctx.fmtCoi(ctx.coi(r.sire_id, r.dam_id)) : ""],
+    ["COI", ctx.coi && r.sire_id && r.dam_id ? ctx.fmtCoi(ctx.coi(r.sire_id, r.dam_id)) : ""],
   ].filter(([, v]) => v);
 
   // Each row is a small label over its value, so long colors and genotypes get the full width
@@ -230,7 +230,7 @@ export const pedigreePdf = (subject, ctx) => {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(...COLOR.text);
-  doc.text(`Owner: ${ctx.rabbitry}`, PAGE.margin, fy + 6);
+  doc.text(ctx.transfer ? `Breeder: ${ctx.rabbitry} · ${ctx.transfer}` : `Owner: ${ctx.rabbitry}`, PAGE.margin, fy + 6);
   doc.setTextColor(...COLOR.muted);
   doc.text(`Generated ${ctx.fmtDate(new Date().toISOString().slice(0, 10))}`, PAGE.margin, fy + 19);
   if ([...ctx.counts.values()].some((n) => n > 1)) {

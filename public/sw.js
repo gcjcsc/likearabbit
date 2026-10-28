@@ -1,8 +1,8 @@
 // Keeps the app usable with no signal: everything is fetched fresh when online and the last good copy
 // is saved, so the herd (as of the last time it loaded) still opens offline. Saving changes needs a connection.
 
-const CACHE = "mcf-v4";
-const SHELL = ["/", "/app.js", "/styles.css", "/favicon.svg", "/manifest.webmanifest", "/icons/apple-touch-icon.png", "/pedigree-pdf.js", "/photos.js", "/vendor/jspdf.umd.min.js"];
+const CACHE = "mcf-v5";
+const SHELL = ["/", "/app.js", "/styles.css", "/favicon.svg", "/manifest.webmanifest", "/icons/apple-touch-icon.png", "/pedigree-pdf.js", "/photos.js", "/reminders.js", "/vendor/jspdf.umd.min.js"];
 
 self.addEventListener("install", (event) => {
   // Signed-out installs get redirected to /login; skip those rather than caching the redirect
@@ -55,7 +55,35 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.startsWith("/api/photos/")) return event.respondWith(cacheFirst(request));
   if (url.pathname.startsWith("/api/") || url.pathname === "/login") return;
   // Every page of the app is the same document; the part after # picks the view
-  if (request.mode === "navigate") return event.respondWith(networkFirst(request, "/"));
+  if (request.mode === "navigate") {
+    // Only the app itself; other pages (like the public sale page) are left to the network
+    if (url.pathname === "/") event.respondWith(networkFirst(request, "/"));
+    return;
+  }
   event.respondWith(networkFirst(request, url.pathname));
 });
 
+
+// Phone notifications sent by the Worker's daily job
+self.addEventListener("push", (event) => {
+  const data = event.data ? event.data.json() : {};
+  event.waitUntil(
+    self.registration.showNotification(data.title || "MCF Rabbitry", {
+      body: data.body || "",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      data: { url: data.url || "/" },
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url || "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window" }).then((windows) => {
+      const open = windows.find((w) => new URL(w.url).pathname === "/");
+      return open ? open.focus().then(() => open.navigate(url)) : self.clients.openWindow(url);
+    })
+  );
+});

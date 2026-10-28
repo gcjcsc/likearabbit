@@ -26,5 +26,7 @@
   ],
   // Workers AI, for reading photos of paper pedigrees (src/scan.js)
   "ai": { "binding": "AI" },
+  // Daily at 12:00 UTC (8 am Eastern in summer, 7 am in winter): reminders, plus the Sunday backup
+  "triggers": { "crons": ["0 12 * * *"] },
   "observability": { "enabled": true }
 }

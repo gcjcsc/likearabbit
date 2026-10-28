@@ -311,3 +311,61 @@ tbody tr:last-child td { border-bottom: 0; }
 
 .check { display: flex; gap: 8px; align-items: center; font-size: 0.95rem; color: var(--text); }
 .check input { width: auto; }
+
+/* ---- Records: weights, health, shows, for sale ---- */
+
+.records h2 { margin-bottom: 0.5rem; }
+.inline-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; margin-bottom: 10px; }
+.inline-form label { width: auto; flex: 1 1 90px; }
+.inline-form label:first-child { flex: 2 1 150px; }
+.record-list { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
+.record-list li { display: flex; justify-content: space-between; gap: 10px; align-items: start; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+.link-button { background: none; border: 0; padding: 0; color: var(--muted); font: inherit; font-size: 0.85rem; cursor: pointer; text-decoration: underline; }
+.add-record { margin-bottom: 8px; }
+.add-record summary { cursor: pointer; color: var(--brand); margin-bottom: 8px; }
+.add-record form { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
+.warn-text { color: var(--warn); font-weight: 600; }
+.chip.warn { background: var(--warn); color: var(--surface); border-color: transparent; }
+.chip.sale { background: var(--ok); color: var(--surface); border-color: transparent; }
+.chip.leg { background: var(--brand); color: var(--brand-text); border-color: transparent; }
+.card-chips { margin: 4px 0 0; }
+
+.weight-chart { width: 100%; height: auto; max-width: 640px; display: block; margin-bottom: 8px; }
+.weight-chart .grid { stroke: var(--line); stroke-width: 1; }
+.weight-chart text { fill: var(--muted); font-size: 12px; }
+.weight-chart .line { fill: none; stroke: var(--brand); stroke-width: 2.5; stroke-linejoin: round; }
+.weight-chart .dot { fill: var(--surface); stroke: var(--brand); stroke-width: 2; }
+
+.todo { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.todo li { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.todo li.late strong { color: var(--danger); }
+.todo li.today strong { color: var(--warn); }
+.small-button { padding: 4px 10px; font-size: 0.85rem; }
+.sort-by { color: var(--muted); font-size: 0.9rem; margin: 0.75rem 0 0; }
+.sort-by a { color: var(--muted); }
+.sort-by a.active { color: var(--text); font-weight: 600; text-decoration: none; }
+.checklist { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.weigh-table { width: auto; }
+.weigh-table input { width: 80px; }
+.weigh-table td, .weigh-table th { padding: 4px 6px; }
+
+/* ---- Public sale page ---- */
+
+.sale-header { display: flex; gap: 12px; align-items: center; padding: 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.sale-header h1 { margin: 0; font-size: 1.5rem; }
+.sale-header p { margin: 0; }
+.sale-intro { font-size: 1.05rem; max-width: 720px; }
+.contact-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 20px; }
+.sale-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.sale-card { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.sale-photo { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: var(--bg); }
+.sale-photo.empty { display: grid; place-items: center; }
+.sale-photo.empty img { width: 64px; opacity: 0.5; }
+.sale-thumbs { display: flex; gap: 6px; padding: 8px 12px 0; overflow-x: auto; }
+.sale-thumbs button { padding: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: none; cursor: pointer; flex: none; }
+.sale-thumbs img { width: 52px; height: 52px; object-fit: cover; display: block; }
+.sale-body { padding: 12px 16px 16px; display: grid; gap: 4px; }
+.sale-body h2 { margin: 0; font-size: 1.2rem; }
+.sale-body p { margin: 0; }
+.sale-price { font-weight: 700; font-size: 1.15rem; color: var(--ok); }
+.sale-body .form-actions { margin-top: 8px; }

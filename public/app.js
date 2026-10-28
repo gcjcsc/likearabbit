@@ -2,11 +2,12 @@
 
 import { pedigreePdf } from "./pedigree-pdf.js";
 import { photoUrl, exifDate, uploadPhoto, photoDataUrl } from "./photos.js";
+import { upcoming as upcomingItems, litterSteps, withdrawalEnds, GESTATION_DAYS } from "./reminders.js";
 
 const app = document.getElementById("app");
 
-const GESTATION_DAYS = 31;
-const RABBITRY = "MCF Rabbitry";
+const DEFAULT_RABBITRY = "MCF Rabbitry";
+const rabbitry = () => settings.rabbitry || DEFAULT_RABBITRY;
 const STATUS_LABELS = { herd: "In the herd", ancestor: "Pedigree only", sold: "Sold", deceased: "Deceased" };
 // Ways a rabbit leaves the herd, and the status each one files it under
 const RETIRE_REASONS = { Sold: "sold", "Gave away": "sold", Died: "deceased", Culled: "deceased" };
@@ -16,6 +17,10 @@ const statusLabel = (r) => (isRetired(r) && r.left_reason) || STATUS_LABELS[r.st
 let rabbits = [];
 let litters = [];
 let photos = [];
+let weights = [];
+let health = [];
+let shows = [];
+let settings = {};
 let byId = new Map();
 
 // ---- Helpers ----
@@ -69,7 +74,7 @@ const api = async (method, path, body) => {
 };
 
 const load = async () => {
-  ({ rabbits, litters, photos = [] } = await api("GET", "/api/data"));
+  ({ rabbits, litters, photos = [], weights = [], health = [], shows = [], settings = {} } = await api("GET", "/api/data"));
   byId = new Map(rabbits.map((r) => [r.id, r]));
   coiMemo.clear();
   genMemo.clear();
@@ -187,29 +192,75 @@ const rabbitCard = (r) => {
     <div>${esc([sexLabel(r), r.color].filter(Boolean).join(" · "))}</div>
     <div class="muted">${esc([r.dob && `${age(r.dob)} old`, r.breeder].filter(Boolean).join(" · "))}</div>
     ${sire || dam ? `<div class="muted small">${esc(displayName(sire))} × ${esc(displayName(dam))}</div>` : ""}
+    ${cardChips(r)}
   </a>`;
 };
 
-const viewHerd = () => {
-  const herd = rabbits.filter((r) => r.status === "herd").sort(byName);
+const cardChips = (r) => {
+  const until = withdrawalUntil(r);
+  const chips = [
+    r.cage && `<span class="chip">Cage ${esc(r.cage)}</span>`,
+    r.for_sale && r.status === "herd" && `<span class="chip sale">For sale${r.sale_price ? ` · ${/^\d/.test(r.sale_price) ? "$" : ""}${esc(r.sale_price)}` : ""}</span>`,
+    until && `<span class="chip warn">Withdrawal to ${fmtDate(until)}</span>`,
+  ].filter(Boolean);
+  return chips.length ? `<div class="chips card-chips">${chips.join("")}</div>` : "";
+};
+
+// Litter jobs and withdrawal periods from a week ago to two weeks ahead, with a Done button for litter jobs
+const comingUp = () => {
+  const today = toISO(new Date());
+  const items = upcomingItems({ litters, health, rabbits }, addDays(today, -7), addDays(today, 14), (id) => displayName(byId.get(id)));
+  if (!items.length) return "";
+  const when = (d) => {
+    const n = daysUntil(d);
+    return n === 0 ? "Today" : n === 1 ? "Tomorrow" : n < 0 ? `${-n} day${n === -1 ? "" : "s"} late` : `${fmtDate(d)} · in ${n} days`;
+  };
+  return `<section class="card due"><h2>Coming up</h2><ul class="todo">${items
+    .map(
+      (i) => `<li class="${i.date < today ? "late" : i.date === today ? "today" : ""}">
+        <span><strong>${when(i.date)}</strong> · <a href="${i.litterId ? `#/litters/${i.litterId}` : `#/rabbit/${i.rabbitId}`}">${esc(i.text)}</a></span>
+        ${i.litterId ? `<button type="button" class="button small-button" data-done="${i.litterId}:${i.key}">Done</button>` : ""}</li>`
+    )
+    .join("")}</ul></section>`;
+};
+
+const markDone = async (litterId, key) => {
+  const l = litters.find((x) => x.id === litterId);
+  const done = new Set(String(l.done || "").split(",").filter(Boolean));
+  done.add(key);
+  await api("PUT", `/api/litters/${litterId}`, { done: [...done].join(",") });
+  await load();
+};
+
+const viewHerd = (params = new URLSearchParams()) => {
+  const sort = params.get("sort") || "name";
+  // Rabbits with a cage first, in cage order (A2 before A10), then the rest by name
+  const byCage = (a, b) => !a.cage - !b.cage || a.cage.localeCompare(b.cage, undefined, { numeric: true }) || byName(a, b);
+  const herd = rabbits.filter((r) => r.status === "herd").sort(sort === "cage" ? byCage : byName);
   const group = (label, list) =>
     list.length ? `<section><h2>${label} <span class="count">${list.length}</span></h2><div class="grid">${list.map(rabbitCard).join("")}</div></section>` : "";
-  const upcoming = litters
-    .filter((l) => l.bred_on && !l.kindled_on && daysUntil(addDays(l.bred_on, GESTATION_DAYS)) >= -7)
-    .sort((a, b) => a.bred_on.localeCompare(b.bred_on));
-  const dueList = upcoming.length
-    ? `<section class="card due"><h2>Due soon</h2><ul>${upcoming
-        .map((l) => `<li><a href="#/litters">${esc(displayName(byId.get(l.dam_id)))}</a> · ${dueText(l)}</li>`)
-        .join("")}</ul></section>`
-    : "";
   app.innerHTML = `
     <div class="title-row"><h1>Herd</h1><div class="actions"><a class="button" href="#/scan">📷 Scan a pedigree</a></div></div>
-    ${dueList}
+    ${comingUp()}
+    <p class="sort-by">Sort by <a href="#/" class="${sort === "name" ? "active" : ""}">name</a> · <a href="#/?sort=cage" class="${sort === "cage" ? "active" : ""}">cage</a></p>
     ${group("Bucks", herd.filter((r) => r.sex === "buck"))}
     ${group("Does", herd.filter((r) => r.sex === "doe"))}
     ${group("Not sexed yet", herd.filter((r) => !r.sex))}
     ${herd.length ? "" : `<p class="muted">No rabbits in the herd yet. <a href="#/new">Add one</a>.</p>`}
     ${pastRabbits()}`;
+  app.querySelectorAll("[data-done]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const [litterId, key] = b.dataset.done.split(":");
+      b.disabled = true;
+      try {
+        await markDone(Number(litterId), key);
+        viewHerd(params);
+      } catch (err) {
+        alert(err.message);
+        b.disabled = false;
+      }
+    })
+  );
 };
 
 const leftSummary = (r) =>
@@ -291,6 +342,9 @@ const viewRabbit = (id) => {
           <span class="chip">${statusLabel(r)}</span>
           ${r.ear ? `<span class="chip">Ear ${esc(r.ear)}</span>` : ""}
           ${r.tattoo ? `<span class="chip">Tattoo ${esc(r.tattoo)}</span>` : ""}
+          ${r.cage ? `<span class="chip">Cage ${esc(r.cage)}</span>` : ""}
+          ${r.for_sale && r.status === "herd" ? `<span class="chip sale">For sale</span>` : ""}
+          ${withdrawalUntil(r) ? `<span class="chip warn">Withdrawal until ${fmtDate(withdrawalUntil(r))}</span>` : ""}
         </p>
       </div>
       <div class="actions">
@@ -302,7 +356,9 @@ const viewRabbit = (id) => {
 
     ${
       isRetired(r)
-        ? `<section class="card retired"><p><strong>${leftSummary(r)}</strong></p><button class="button" type="button" id="unretire-btn">Return to the herd</button></section>`
+        ? `<section class="card retired"><p><strong>${leftSummary(r)}</strong></p><div class="actions">
+            ${r.status === "sold" ? `<button class="button primary" type="button" id="buyer-btn">Send pedigree to ${esc(r.left_to || "the buyer")}</button>` : ""}
+            <button class="button" type="button" id="unretire-btn">Return to the herd</button></div></section>`
         : ""
     }
 
@@ -328,6 +384,10 @@ const viewRabbit = (id) => {
     </section>
 
     ${photoSection(r)}
+    ${saleSection(r)}
+    ${weightsSection(r)}
+    ${healthSection(r)}
+    ${showsSection(r)}
 
     <section>
       <h2>Pedigree</h2>
@@ -348,6 +408,11 @@ const viewRabbit = (id) => {
 
   document.getElementById("share-btn").addEventListener("click", () => sharePedigree(r));
   wirePhotos(r);
+  wireSale(r);
+  wireWeights(r);
+  wireHealth(r);
+  wireShows(r);
+  document.getElementById("buyer-btn")?.addEventListener("click", () => sharePedigree(r));
   document.getElementById("retire-btn")?.addEventListener("click", () => retireDialog(r));
   document.getElementById("unretire-btn")?.addEventListener("click", async () => {
     if (!confirm(`Put ${displayName(r)} back in the herd?`)) return;
@@ -381,6 +446,7 @@ const retireDialog = (r) => {
         ${field("Price", "price", "", 'inputmode="decimal" placeholder="e.g. 40"')}
       </div>
       <label>Note <span class="muted">(added to their notes)</span><textarea name="note" rows="2"></textarea></label>
+      ${withdrawalUntil(r) ? `<p class="warn-text" id="withdrawal-warning" hidden>Still in a withdrawal period until ${fmtDate(withdrawalUntil(r))}. Don't process for meat before then.</p>` : ""}
       <p class="error" id="retire-error" role="alert" hidden></p>
       <div class="form-actions">
         <button class="button primary" type="submit">Retire</button>
@@ -394,6 +460,8 @@ const retireDialog = (r) => {
     const reason = form.left_reason.value;
     dialog.querySelector("#new-home").hidden = RETIRE_REASONS[reason] !== "sold";
     form.price.closest("label").hidden = reason !== "Sold";
+    const warning = dialog.querySelector("#withdrawal-warning");
+    if (warning) warning.hidden = reason !== "Culled";
   };
   form.addEventListener("change", sync);
   sync();
@@ -412,6 +480,7 @@ const retireDialog = (r) => {
         left_on: data.left_on,
         left_to: goesToSomeone ? data.left_to : "",
         price: data.left_reason === "Sold" ? data.price : "",
+        for_sale: 0,
         ...(note && { notes: [r.notes, `${fmtDate(data.left_on)}: ${note}`].filter(Boolean).join("\n") }),
       });
       dialog.close();
@@ -428,9 +497,13 @@ const retireDialog = (r) => {
 
 // ---- Pedigree PDF: made on the phone and handed to the share sheet for Messages, Mail or AirDrop ----
 
+// "Sold to Jane Smith on Oct 28, 2026" on the PDF of a rabbit that has gone to a new owner
+const transferLine = (r) =>
+  r.status === "sold" && (r.left_to || r.left_on) ? `${r.left_reason === "Gave away" ? "Transferred" : "Sold"}${r.left_to ? ` to ${r.left_to}` : ""}${r.left_on ? ` on ${fmtDate(r.left_on)}` : ""}` : "";
+
 const sharePedigree = async (r) => {
   const photo = photoCache.get(r.photo_id);
-  const blob = pedigreePdf(r, { displayName, fmtDate, fmtCoi, coi, pedigreeColumns, repeatsIn, rabbitry: RABBITRY, photo: photo?.dataUrl && photo });
+  const blob = pedigreePdf(r, { displayName, fmtDate, fmtCoi, coi, pedigreeColumns, repeatsIn, rabbitry: rabbitry(), photo: photo?.dataUrl && photo, transfer: transferLine(r) });
   const filename = `${displayName(r).replace(/[^\w\s'&-]+/g, "").trim() || "Rabbit"} pedigree.pdf`;
   const file = new File([blob], filename, { type: "application/pdf" });
   if (navigator.canShare?.({ files: [file] })) {
@@ -603,6 +676,389 @@ const photoViewer = (r, photoId) => {
   dialog.showModal();
 };
 
+// ---- Weights: a log per rabbit, charted, with the newest copied to the rabbit's weight ----
+
+const fmtWeight = (oz) => {
+  const lbs = Math.floor(oz / 16);
+  const rest = Math.round((oz - lbs * 16) * 10) / 10;
+  return [lbs && `${lbs} lb${lbs === 1 ? "" : "s"}`, rest && `${rest} oz`].filter(Boolean).join(" ") || "0 oz";
+};
+
+const weightsOf = (r) => weights.filter((w) => w.rabbit_id === r.id).sort((a, b) => a.weighed_on.localeCompare(b.weighed_on) || a.id - b.id);
+
+// A small line chart in pounds, oldest on the left
+const weightChart = (list) => {
+  if (list.length < 2) return "";
+  const W = 600, H = 180, pad = { l: 44, r: 14, t: 12, b: 26 };
+  const times = list.map((w) => parseDate(w.weighed_on).getTime());
+  const lbs = list.map((w) => w.weight_oz / 16);
+  const [t0, t1] = [Math.min(...times), Math.max(...times)];
+  const top = Math.ceil(Math.max(...lbs) + 0.5);
+  const bottom = Math.max(0, Math.floor(Math.min(...lbs) - 0.5));
+  const x = (t) => pad.l + ((t - t0) / (t1 - t0 || 1)) * (W - pad.l - pad.r);
+  const y = (v) => pad.t + (1 - (v - bottom) / (top - bottom || 1)) * (H - pad.t - pad.b);
+  const points = list.map((w, i) => [x(times[i]), y(lbs[i])]);
+  const ticks = [bottom, (bottom + top) / 2, top];
+  return `<svg class="weight-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight over time, ${esc(fmtWeight(list[0].weight_oz))} to ${esc(fmtWeight(list.at(-1).weight_oz))}">
+    ${ticks.map((v) => `<line x1="${pad.l}" x2="${W - pad.r}" y1="${y(v)}" y2="${y(v)}" class="grid"/><text x="${pad.l - 6}" y="${y(v) + 4}" text-anchor="end">${Math.round(v * 10) / 10} lb</text>`).join("")}
+    <text x="${pad.l}" y="${H - 6}">${esc(fmtDate(list[0].weighed_on))}</text>
+    <text x="${W - pad.r}" y="${H - 6}" text-anchor="end">${esc(fmtDate(list.at(-1).weighed_on))}</text>
+    <polyline points="${points.map((p) => p.join(",")).join(" ")}" class="line"/>
+    ${points.map(([px, py]) => `<circle cx="${px}" cy="${py}" r="4" class="dot"/>`).join("")}
+  </svg>`;
+};
+
+const weightsSection = (r) => {
+  const list = weightsOf(r);
+  return `<section class="records" id="weights">
+    <h2>Weights ${list.length ? `<span class="count">${list.length}</span>` : ""}</h2>
+    ${weightChart(list)}
+    <form class="inline-form" id="weight-form">
+      ${field("Date", "weighed_on", toISO(new Date()), 'type="date" required')}
+      ${field("lbs", "lbs", "", 'type="number" min="0" step="1" inputmode="numeric"')}
+      ${field("oz", "oz", "", 'type="number" min="0" max="15.9" step="0.1" inputmode="decimal"')}
+      <button class="button primary" type="submit">Add weight</button>
+    </form>
+    ${
+      list.length
+        ? `<ul class="record-list">${list
+            .slice()
+            .reverse()
+            .map(
+              (w) => `<li><span><strong>${fmtWeight(w.weight_oz)}</strong> <span class="muted">${fmtDate(w.weighed_on)}${r.dob ? ` · age ${ageOn(r.dob, w.weighed_on)}` : ""}</span></span>
+                <button type="button" class="link-button" data-delete-weight="${w.id}" aria-label="Delete this weight">Delete</button></li>`
+            )
+            .join("")}</ul>`
+        : ""
+    }
+  </section>`;
+};
+
+// Saves a weighing and keeps the rabbit's weight field (shown on pedigrees) at the newest one
+const saveWeight = async (rabbit, weighedOn, oz) => {
+  await api("POST", "/api/weights", { rabbit_id: rabbit.id, weighed_on: weighedOn, weight_oz: oz });
+  const newest = weightsOf(rabbit).at(-1);
+  if (!newest || weighedOn >= newest.weighed_on) await api("PUT", `/api/rabbits/${rabbit.id}`, { weight: fmtWeight(oz) });
+};
+
+const ozFrom = (lbs, oz) => (Number(lbs) || 0) * 16 + (Number(oz) || 0);
+
+const wireWeights = (r) => {
+  document.getElementById("weight-form").addEventListener("submit", (e) =>
+    recordAction(e, r, async (data) => {
+      const oz = ozFrom(data.lbs, data.oz);
+      if (!(oz > 0)) throw new Error("Enter a weight in pounds and/or ounces.");
+      await saveWeight(r, data.weighed_on, oz);
+    })
+  );
+  document.querySelectorAll("[data-delete-weight]").forEach((b) =>
+    b.addEventListener("click", () => recordDelete(r, `/api/weights/${b.dataset.deleteWeight}`, "Delete this weight?"))
+  );
+};
+
+// Runs a record form's save, then redraws the rabbit's page where it was
+const recordAction = async (e, r, save) => {
+  e.preventDefault();
+  const form = e.target;
+  const button = form.querySelector("button[type=submit]");
+  button.disabled = true;
+  try {
+    await save(Object.fromEntries(new FormData(form)));
+    await load();
+    const anchor = form.closest("section")?.id;
+    viewRabbit(r.id);
+    if (anchor) document.getElementById(anchor)?.scrollIntoView();
+  } catch (err) {
+    alert(err.message);
+    button.disabled = false;
+  }
+};
+
+const recordDelete = async (r, path, question, after) => {
+  if (!confirm(question)) return;
+  try {
+    await api("DELETE", path);
+    if (after) await after();
+    await load();
+    viewRabbit(r.id);
+  } catch (err) {
+    alert(err.message);
+  }
+};
+
+// ---- Health: treatments, vaccinations, vet visits, with withdrawal periods for meat rabbits ----
+
+const HEALTH_KINDS = { treatment: "Treatment", vaccination: "Vaccination", vet: "Vet visit", illness: "Illness / injury", other: "Other" };
+
+// The latest withdrawal end date still in the future (or today), or ""
+const withdrawalUntil = (r) =>
+  health
+    .filter((h) => h.rabbit_id === r.id)
+    .map(withdrawalEnds)
+    .filter((d) => d && d >= toISO(new Date()))
+    .sort()
+    .at(-1) || "";
+
+const healthSection = (r) => {
+  const list = health.filter((h) => h.rabbit_id === r.id).sort((a, b) => b.given_on.localeCompare(a.given_on) || b.id - a.id);
+  return `<section class="records" id="health">
+    <h2>Health ${list.length ? `<span class="count">${list.length}</span>` : ""}</h2>
+    <details class="add-record" ${list.length ? "" : "open"}><summary>+ Add a health record</summary>
+      <form class="form-grid" id="health-form">
+        ${field("Date", "given_on", toISO(new Date()), 'type="date" required')}
+        <label>Type<select name="kind">${Object.entries(HEALTH_KINDS).map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></label>
+        ${field("What", "item", "", 'placeholder="e.g. Ivermectin, RHDV2 vaccine" required')}
+        ${field("Dose", "dose", "", 'placeholder="e.g. 0.2 ml"')}
+        ${field("Withdrawal (days)", "withdrawal_days", "", 'type="number" min="0" inputmode="numeric" placeholder="Meat withdrawal"')}
+        ${field("Notes", "notes", "")}
+        <div class="form-actions"><button class="button primary" type="submit">Save</button></div>
+      </form>
+    </details>
+    ${
+      list.length
+        ? `<ul class="record-list">${list
+            .map((h) => {
+              const end = withdrawalEnds(h);
+              const active = end && end >= toISO(new Date());
+              return `<li><span><strong>${esc(h.item || HEALTH_KINDS[h.kind])}</strong> <span class="muted">${HEALTH_KINDS[h.kind]} · ${fmtDate(h.given_on)}${h.dose ? ` · ${esc(h.dose)}` : ""}</span>
+                  ${end ? `<br><span class="${active ? "warn-text" : "muted"}">${active ? "Withdrawal until" : "Withdrawal ended"} ${fmtDate(end)}</span>` : ""}
+                  ${h.notes ? `<br><span class="muted">${esc(h.notes)}</span>` : ""}</span>
+                <button type="button" class="link-button" data-delete-health="${h.id}" aria-label="Delete this health record">Delete</button></li>`;
+            })
+            .join("")}</ul>`
+        : ""
+    }
+  </section>`;
+};
+
+const wireHealth = (r) => {
+  document.getElementById("health-form").addEventListener("submit", (e) =>
+    recordAction(e, r, (data) => api("POST", "/api/health", { ...data, rabbit_id: r.id }))
+  );
+  document.querySelectorAll("[data-delete-health]").forEach((b) =>
+    b.addEventListener("click", () => recordDelete(r, `/api/health/${b.dataset.deleteHealth}`, "Delete this health record?"))
+  );
+};
+
+// ---- Shows: results, with ARBA legs counted onto the rabbit ----
+
+// ARBA: a leg is first place in a class with at least 3 exhibitors and 5 rabbits (or a higher award)
+const earnsLeg = (data) => /^(1|1st|first|bob|bos|bopb|bis|ris)/i.test(String(data.placing).trim()) && Number(data.exhibitors) >= 3 && Number(data.entries) >= 5;
+const legCount = (r) => Number.parseInt(r.legs, 10) || 0;
+
+const showsSection = (r) => {
+  const list = shows.filter((s) => s.rabbit_id === r.id).sort((a, b) => b.show_on.localeCompare(a.show_on) || b.id - a.id);
+  const legs = legCount(r);
+  return `<section class="records" id="shows">
+    <h2>Shows ${list.length ? `<span class="count">${list.length}</span>` : ""}</h2>
+    ${legs ? `<p class="muted">${legs} leg${legs === 1 ? "" : "s"} on record.${legs >= 3 && !r.gc ? " <strong>Eligible to apply for a Grand Champion certificate.</strong>" : ""}</p>` : ""}
+    <details class="add-record" ${list.length ? "" : ""}><summary>+ Add a show result</summary>
+      <form class="form-grid" id="show-form">
+        ${field("Date", "show_on", toISO(new Date()), 'type="date" required')}
+        ${field("Show", "show_name", "", 'placeholder="e.g. SC State Fair" required')}
+        ${field("Class", "class_name", "", 'placeholder="e.g. Senior Doe, Broken"')}
+        ${field("Placing", "placing", "", 'placeholder="e.g. 1st, BOV, BOB"')}
+        ${field("Exhibitors", "exhibitors", "", 'type="number" min="0" inputmode="numeric"')}
+        ${field("Rabbits in class", "entries", "", 'type="number" min="0" inputmode="numeric"')}
+        <label class="check"><input type="checkbox" name="leg" value="1"> Earned a leg</label>
+        ${field("Notes", "notes", "")}
+        <div class="form-actions"><button class="button primary" type="submit">Save</button></div>
+      </form>
+    </details>
+    ${
+      list.length
+        ? `<ul class="record-list">${list
+            .map(
+              (s) => `<li><span><strong>${esc(s.placing || "Shown")}</strong>${s.leg ? ` <span class="chip leg">Leg</span>` : ""} <span class="muted">${esc(s.show_name)} · ${fmtDate(s.show_on)}${s.class_name ? ` · ${esc(s.class_name)}` : ""}${
+                s.exhibitors || s.entries ? ` · ${s.exhibitors ?? "?"} exhibitors, ${s.entries ?? "?"} rabbits` : ""
+              }</span>${s.notes ? `<br><span class="muted">${esc(s.notes)}</span>` : ""}</span>
+                <button type="button" class="link-button" data-delete-show="${s.id}" data-leg="${s.leg}" aria-label="Delete this show result">Delete</button></li>`
+            )
+            .join("")}</ul>`
+        : ""
+    }
+  </section>`;
+};
+
+const wireShows = (r) => {
+  const form = document.getElementById("show-form");
+  // Tick "Earned a leg" when the placing and class size qualify; it can still be changed
+  form.addEventListener("input", (e) => {
+    if (e.target.name !== "leg") form.leg.checked = earnsLeg(Object.fromEntries(new FormData(form)));
+  });
+  form.addEventListener("submit", (e) =>
+    recordAction(e, r, async (data) => {
+      await api("POST", "/api/shows", { ...data, leg: data.leg ? 1 : 0, rabbit_id: r.id });
+      if (data.leg) await api("PUT", `/api/rabbits/${r.id}`, { legs: String(legCount(r) + 1) });
+    })
+  );
+  document.querySelectorAll("[data-delete-show]").forEach((b) =>
+    b.addEventListener("click", () =>
+      recordDelete(r, `/api/shows/${b.dataset.deleteShow}`, "Delete this show result?", async () => {
+        if (b.dataset.leg === "1" && legCount(r) > 0) await api("PUT", `/api/rabbits/${r.id}`, { legs: String(legCount(r) - 1) });
+      })
+    )
+  );
+};
+
+// ---- For sale: listing a rabbit on the public sale page ----
+
+const saleUrl = () => `${location.origin}/sale`;
+
+const saleSection = (r) => {
+  if (r.status !== "herd") return "";
+  return `<section class="records" id="sale">
+    <h2>For sale</h2>
+    <form class="card form" id="sale-form">
+      <label class="check"><input type="checkbox" name="for_sale" value="1" ${r.for_sale ? "checked" : ""}> List ${esc(displayName(r))} on the public sale page</label>
+      <div class="form-grid">
+        ${field("Price", "sale_price", r.sale_price, 'placeholder="e.g. 60"')}
+        ${field("Note for buyers", "sale_notes", r.sale_notes, 'placeholder="e.g. Show quality, great temperament"')}
+      </div>
+      <div class="form-actions"><button class="button primary" type="submit">Save</button>
+        ${r.for_sale ? `<a class="button" href="/sale" target="_blank" rel="noopener">View sale page</a>` : ""}</div>
+    </form>
+  </section>`;
+};
+
+const wireSale = (r) => {
+  document.getElementById("sale-form")?.addEventListener("submit", (e) =>
+    recordAction(e, r, (data) => api("PUT", `/api/rabbits/${r.id}`, { for_sale: data.for_sale ? 1 : 0, sale_price: data.sale_price, sale_notes: data.sale_notes }))
+  );
+};
+
+// ---- Settings: rabbitry details, sale page, notifications, backups ----
+
+const viewSettings = async () => {
+  const s = settings;
+  const pushSupported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+  const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  app.innerHTML = `
+    <h1>Settings</h1>
+
+    <form class="card form" id="settings-form">
+      <h2>Rabbitry</h2>
+      <p class="muted small">Shown on pedigrees and the public sale page.</p>
+      <div class="form-grid">
+        ${field("Rabbitry name", "rabbitry", s.rabbitry || DEFAULT_RABBITRY)}
+        ${field("Contact name", "contact_name", s.contact_name)}
+        ${field("Phone", "phone", s.phone, 'type="tel"')}
+        ${field("Email", "email", s.email, 'type="email"')}
+        ${field("Location", "location", s.location, 'placeholder="e.g. Pickens, SC"')}
+        <label>Time zone<select name="timezone">${["America/New_York", "America/Chicago", "America/Denver", "America/Phoenix", "America/Los_Angeles"]
+          .map((z) => `<option ${z === (s.timezone || "America/New_York") ? "selected" : ""}>${z}</option>`)
+          .join("")}</select></label>
+      </div>
+      <label>Sale page introduction<textarea name="sale_intro" rows="3" placeholder="e.g. Quality Rex for show and meat. Pickup in Pickens, SC.">${esc(s.sale_intro)}</textarea></label>
+      ${field("Email weekly backups to", "backup_email", s.backup_email, 'type="email"')}
+      <div class="form-actions"><button class="button primary" type="submit">Save</button></div>
+    </form>
+
+    <section class="card">
+      <h2>Public sale page</h2>
+      <p>Anyone with this link can see rabbits you've listed for sale (no password), with photos, prices and pedigrees:</p>
+      <p><a href="/sale" target="_blank" rel="noopener">${esc(saleUrl())}</a></p>
+      <div class="form-actions"><button class="button" type="button" id="share-sale">Share the link</button></div>
+      <p class="muted small">${rabbits.filter((r) => r.for_sale && r.status === "herd").length} rabbits listed. List one from its page, under "For sale".</p>
+    </section>
+
+    <section class="card">
+      <h2>Phone notifications</h2>
+      <p>Each morning, a notification lists that day's litter jobs (palpate, nest box, due date, tattooing, weaning) and any withdrawal periods ending.</p>
+      ${
+        !pushSupported
+          ? `<p class="muted">${isIos && !standalone ? "On iPhone, open the app from its home-screen icon first, then turn notifications on here." : "This browser can't receive notifications."}</p>`
+          : `<div class="form-actions"><button class="button primary" type="button" id="push-on">Turn on for this phone</button>
+             <button class="button" type="button" id="push-test">Send a test</button>
+             <button class="button" type="button" id="push-off">Turn off</button></div>`
+      }
+      <p class="muted small" id="push-status" role="status"></p>
+    </section>
+
+    <section class="card">
+      <h2>Backups</h2>
+      <p>A backup of all records is saved automatically every Sunday (the newest 12 are kept). Photos aren't included in backups.
+        Cloudflare also keeps 30 days of history for the database itself.</p>
+      <div class="form-actions"><button class="button" type="button" id="backup-now">Back up now</button><a class="button" href="/api/export">Download everything now</a></div>
+      <ul class="record-list" id="backup-list"><li class="muted">Loading…</li></ul>
+      <p class="muted small">Backups are only emailed once a free Resend API key is added to the app (see the README); until then they're kept here.</p>
+    </section>`;
+
+  document.getElementById("settings-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api("PUT", "/api/settings", Object.fromEntries(new FormData(e.target)));
+      await load();
+      alert("Saved.");
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
+  document.getElementById("share-sale").addEventListener("click", () =>
+    navigator.share ? navigator.share({ title: rabbitry(), url: saleUrl() }).catch(() => {}) : navigator.clipboard?.writeText(saleUrl()).then(() => alert("Link copied."))
+  );
+
+  const status = document.getElementById("push-status");
+  const say = (text) => (status.textContent = text);
+  const currentSub = async () => (await navigator.serviceWorker.ready).pushManager.getSubscription();
+  if (pushSupported) {
+    currentSub().then((sub) => say(sub ? "Notifications are on for this phone." : "Notifications are off for this phone."));
+    document.getElementById("push-on").addEventListener("click", async () => {
+      try {
+        if ((await Notification.requestPermission()) !== "granted") return say("Notifications weren't allowed. Turn them on in the phone's Settings → Notifications.");
+        const { publicKey } = await api("GET", "/api/push/key");
+        const reg = await navigator.serviceWorker.ready;
+        const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: publicKey }));
+        await api("POST", "/api/push/subscribe", sub.toJSON());
+        say("Notifications are on for this phone.");
+      } catch (err) {
+        say(`Couldn't turn notifications on: ${err.message}`);
+      }
+    });
+    document.getElementById("push-test").addEventListener("click", async () => {
+      try {
+        const { sent, total } = await api("POST", "/api/push/test");
+        say(total ? `Test sent to ${sent} of ${total} phone${total === 1 ? "" : "s"}.` : "No phones have notifications turned on yet.");
+      } catch (err) {
+        say(err.message);
+      }
+    });
+    document.getElementById("push-off").addEventListener("click", async () => {
+      const sub = await currentSub();
+      if (sub) {
+        await api("DELETE", "/api/push/subscribe", { endpoint: sub.endpoint }).catch(() => {});
+        await sub.unsubscribe();
+      }
+      say("Notifications are off for this phone.");
+    });
+  }
+
+  const showBackups = async () => {
+    const list = document.getElementById("backup-list");
+    try {
+      const backups = await api("GET", "/api/backups");
+      list.innerHTML = backups.length
+        ? backups
+            .map((b) => `<li><span>${fmtDate(b.created_at.slice(0, 10))} <span class="muted">${Math.max(1, Math.round(b.size / 1024))} KB</span></span><a href="/api/backups/${b.id}">Download</a></li>`)
+            .join("")
+        : `<li class="muted">No backups yet. The first is made on Sunday, or tap "Back up now".</li>`;
+    } catch (err) {
+      list.innerHTML = `<li class="error">${esc(err.message)}</li>`;
+    }
+  };
+  showBackups();
+  document.getElementById("backup-now").addEventListener("click", async () => {
+    try {
+      await api("POST", "/api/backups");
+      showBackups();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+};
+
 // ---- Add and edit ----
 
 const parentOptions = (sex, selected, excludeId) =>
@@ -623,7 +1079,7 @@ const viewForm = (id, params) => {
   const child = byId.get(Number(params.get("child")));
   const role = params.get("as");
   const r = existing || {
-    name: "", ear: "", tattoo: "", sex: role === "sire" ? "buck" : role === "dam" ? "doe" : "", breed: "Rex", color: "", genotype: "", weight: "",
+    name: "", ear: "", tattoo: "", cage: "", sex: role === "sire" ? "buck" : role === "dam" ? "doe" : "", breed: "Rex", color: "", genotype: "", weight: "",
     dob: "", reg: "", gc: "", legs: "", breeder: "", status: child ? "ancestor" : "herd", acquired: "", notes: "", sire_id: null, dam_id: null,
   };
 
@@ -635,6 +1091,7 @@ const viewForm = (id, params) => {
         ${field("Name", "name", r.name, 'autocomplete="off"')}
         ${field("Ear #", "ear", r.ear, 'autocomplete="off"')}
         ${field("Tattoo", "tattoo", r.tattoo, 'autocomplete="off"')}
+        ${field("Cage / hutch", "cage", r.cage, 'autocomplete="off"')}
         <label>Sex<select name="sex">
           <option value="" ${!r.sex ? "selected" : ""}>Not sexed yet</option>
           <option value="buck" ${r.sex === "buck" ? "selected" : ""}>Buck</option>
@@ -749,6 +1206,33 @@ const viewLitters = () => {
     <p class="muted small">Due dates assume ${GESTATION_DAYS} days from breeding.</p>`;
 };
 
+const litterChecklist = (l) => {
+  const steps = litterSteps(l);
+  if (!steps.length) return "";
+  return `<section class="card"><h2>Checklist</h2><ul class="checklist">${steps
+    .map(
+      (s) => `<li><label class="check"><input type="checkbox" data-step="${s.key}" ${s.done ? "checked" : ""}>
+        <span>${s.label} <span class="muted">${fmtDate(s.date)}</span></span></label></li>`
+    )
+    .join("")}</ul><p class="muted small">Dates count from breeding (palpate day 14, nest box day 28, due day ${GESTATION_DAYS}) and from kindling (tattoo week 6, wean week 8). Ticked jobs drop off the reminders.</p></section>`;
+};
+
+const weighKits = (kits) => `<section class="card">
+  <h2>Weigh the kits</h2>
+  <form class="form" id="weigh-form">
+    ${field("Date", "weighed_on", toISO(new Date()), 'type="date" required')}
+    <table class="weigh-table"><thead><tr><th>Kit</th><th>Last</th><th>lbs</th><th>oz</th></tr></thead><tbody>${kits
+      .map((k) => {
+        const last = weightsOf(k).at(-1);
+        return `<tr><td><a href="#/rabbit/${k.id}">${esc(displayName(k))}</a></td><td class="muted">${last ? fmtWeight(last.weight_oz) : "—"}</td>
+          <td><input name="lbs-${k.id}" type="number" min="0" inputmode="numeric" aria-label="${esc(displayName(k))} pounds"></td>
+          <td><input name="oz-${k.id}" type="number" min="0" max="15.9" step="0.1" inputmode="decimal" aria-label="${esc(displayName(k))} ounces"></td></tr>`;
+      })
+      .join("")}</tbody></table>
+    <div class="form-actions"><button class="button primary" type="submit">Save weights</button></div>
+  </form>
+</section>`;
+
 const viewLitterForm = (id) => {
   const existing = id ? litters.find((l) => l.id === id) : null;
   if (id && !existing) return notFound();
@@ -779,7 +1263,9 @@ const viewLitterForm = (id) => {
         ${existing ? `<button class="button" type="button" id="add-kits">Add kits to the herd</button><button class="button danger" type="button" id="delete">Delete</button>` : ""}
       </div>
     </form>
-    ${kits.length ? `<section><h2>Kits <span class="count">${kits.length}</span></h2><div class="grid">${kits.map(rabbitCard).join("")}</div></section>` : ""}`;
+    ${existing ? litterChecklist(existing) : ""}
+    ${kits.length ? `<section><h2>Kits <span class="count">${kits.length}</span></h2><div class="grid">${kits.map(rabbitCard).join("")}</div></section>` : ""}
+    ${kits.filter((k) => k.status === "herd").length ? weighKits(kits.filter((k) => k.status === "herd")) : ""}`;
 
   const form = document.getElementById("litter-form");
   const error = document.getElementById("form-error");
@@ -794,6 +1280,33 @@ const viewLitterForm = (id) => {
   };
   form.addEventListener("change", showCoi);
   showCoi();
+  app.querySelectorAll("[data-step]").forEach((box) =>
+    box.addEventListener("change", async () => {
+      const done = new Set(String(existing.done || "").split(",").filter(Boolean));
+      box.checked ? done.add(box.dataset.step) : done.delete(box.dataset.step);
+      try {
+        await api("PUT", `/api/litters/${existing.id}`, { done: [...done].join(",") });
+        await load();
+        viewLitterForm(existing.id);
+      } catch (err) {
+        alert(err.message);
+      }
+    })
+  );
+  document.getElementById("weigh-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target));
+    try {
+      for (const kit of kits) {
+        const oz = ozFrom(data[`lbs-${kit.id}`], data[`oz-${kit.id}`]);
+        if (oz > 0) await saveWeight(kit, data.weighed_on, oz);
+      }
+      await load();
+      viewLitterForm(existing.id);
+    } catch (err) {
+      alert(err.message);
+    }
+  });
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -821,7 +1334,7 @@ const viewLitterForm = (id) => {
           dam_id: data.dam_id,
           litter_id: existing.id,
           dob: data.kindled_on,
-          breeder: "MCF Rabbitry",
+          breeder: rabbitry(),
           status: "herd",
         });
       }
@@ -1119,11 +1632,12 @@ const route = () => {
   document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === section));
   document.querySelector(".menu")?.removeAttribute("open");
 
-  if (section === "herd") viewHerd();
+  if (section === "herd") viewHerd(params);
   else if (section === "all") viewAll(params);
   else if (section === "pair") viewPair(params);
   else if (section === "new") viewForm(null, params);
   else if (section === "scan") viewScan();
+  else if (section === "settings") viewSettings();
   else if (section === "rabbit" && parts[2] === "edit") viewForm(Number(parts[1]), params);
   else if (section === "rabbit") viewRabbit(Number(parts[1]));
   else if (section === "litters" && parts[1] === "new") {
