@@ -6,7 +6,11 @@ const ID_FIELDS = new Set(["sire_id", "dam_id", "litter_id"]);
 const COUNT_FIELDS = new Set(["born", "alive"]);
 
 // Pages and files the login page needs before anyone has signed in
-const PUBLIC_PATHS = new Set(["/login", "/login.html", "/styles.css", "/favicon.svg", "/api/login"]);
+const PUBLIC_PATHS = new Set([
+  "/login", "/login.html", "/styles.css", "/favicon.svg", "/api/login",
+  // Home-screen icon and app details, which iPhones fetch when adding the app
+  "/manifest.webmanifest", "/icons/apple-touch-icon.png", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon.svg",
+]);
 
 const SESSION_COOKIE = "mcf_session";
 const SESSION_DAYS = 60;

@@ -46,7 +46,11 @@ const api = async (method, path, body) => {
     method,
     headers: body ? { "Content-Type": "application/json" } : {},
     body: body ? JSON.stringify(body) : undefined,
+  }).catch(() => {
+    throw new Error("You're offline. This can't be saved until you have a connection.");
   });
+  // The service worker marks a saved copy it served because there was no connection
+  if (path === "/api/data") document.getElementById("offline").hidden = res.headers.get("X-Offline") !== "1";
   if (res.status === 401) {
     location.href = "/login";
     throw new Error("Signed out");
@@ -664,11 +668,18 @@ const route = () => {
 };
 
 document.getElementById("logout").addEventListener("click", async () => {
-  await fetch("/api/logout", { method: "POST" });
+  await fetch("/api/logout", { method: "POST" }).catch(() => {});
+  // Don't leave a saved copy of the herd behind on a shared phone
+  if ("caches" in window) await Promise.all((await caches.keys()).map((k) => caches.delete(k)));
   location.href = "/login";
 });
 
 window.addEventListener("hashchange", route);
+
+// Back from no signal: pick up anything that changed and drop the offline notice
+window.addEventListener("online", () => load().then(route).catch(() => {}));
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 
 load()
   .then(route)

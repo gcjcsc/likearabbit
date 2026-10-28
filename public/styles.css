@@ -223,3 +223,15 @@ tbody tr:last-child td { border-bottom: 0; }
   .psheet footer p { margin: 0 0 2px; }
   .sign { text-align: right; }
 }
+
+/* ---- Home-screen app ---- */
+
+.offline {
+  margin: 0; padding: 8px 16px; text-align: center; font-size: 0.9rem;
+  background: var(--warn); color: var(--surface);
+}
+
+/* Opened from the home-screen icon: no browser bar, so leave room for the iPhone's home indicator */
+@media (display-mode: standalone) {
+  .page { padding-bottom: calc(60px + env(safe-area-inset-bottom)); }
+}
