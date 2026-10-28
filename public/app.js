@@ -1,6 +1,7 @@
 // MCF herd and pedigree app: loads every rabbit and litter once, renders views by URL hash, and saves through /api
 
 import { pedigreePdf } from "./pedigree-pdf.js";
+import { photoUrl, exifDate, uploadPhoto, photoDataUrl } from "./photos.js";
 
 const app = document.getElementById("app");
 
@@ -14,6 +15,7 @@ const statusLabel = (r) => (isRetired(r) && r.left_reason) || STATUS_LABELS[r.st
 
 let rabbits = [];
 let litters = [];
+let photos = [];
 let byId = new Map();
 
 // ---- Helpers ----
@@ -67,7 +69,7 @@ const api = async (method, path, body) => {
 };
 
 const load = async () => {
-  ({ rabbits, litters } = await api("GET", "/api/data"));
+  ({ rabbits, litters, photos = [] } = await api("GET", "/api/data"));
   byId = new Map(rabbits.map((r) => [r.id, r]));
   coiMemo.clear();
   genMemo.clear();
@@ -179,7 +181,8 @@ const sharedAncestorsNote = (cols) => {
 const rabbitCard = (r) => {
   const sire = byId.get(r.sire_id);
   const dam = byId.get(r.dam_id);
-  return `<a class="card rabbit-card ${r.sex}" href="#/rabbit/${r.id}">
+  return `<a class="card rabbit-card ${r.sex} ${r.photo_id ? "has-photo" : ""}" href="#/rabbit/${r.id}">
+    ${r.photo_id ? `<img class="card-photo" src="${photoUrl(r.photo_id, true)}" alt="" loading="lazy">` : ""}
     <div class="card-head"><strong>${esc(displayName(r))}</strong>${r.ear && r.name ? `<span class="chip">${esc(r.ear)}</span>` : ""}</div>
     <div>${esc([sexLabel(r), r.color].filter(Boolean).join(" · "))}</div>
     <div class="muted">${esc([r.dob && `${age(r.dob)} old`, r.breeder].filter(Boolean).join(" · "))}</div>
@@ -303,7 +306,8 @@ const viewRabbit = (id) => {
         : ""
     }
 
-    <section class="card">
+    <section class="card ${r.photo_id ? "with-photo" : ""}">
+      ${r.photo_id ? `<button type="button" class="hero-photo" data-photo="${r.photo_id}"><img src="${photoUrl(r.photo_id)}" alt="${esc(displayName(r))}"></button>` : ""}
       <dl class="details">
         ${detail("Breed", esc(r.breed))}
         ${detail("Color", esc(r.color))}
@@ -323,6 +327,8 @@ const viewRabbit = (id) => {
       ${r.notes ? `<p class="notes">${esc(r.notes)}</p>` : ""}
     </section>
 
+    ${photoSection(r)}
+
     <section>
       <h2>Pedigree</h2>
       ${sharedAncestorsNote(cols)}
@@ -341,6 +347,7 @@ const viewRabbit = (id) => {
     }`;
 
   document.getElementById("share-btn").addEventListener("click", () => sharePedigree(r));
+  wirePhotos(r);
   document.getElementById("retire-btn")?.addEventListener("click", () => retireDialog(r));
   document.getElementById("unretire-btn")?.addEventListener("click", async () => {
     if (!confirm(`Put ${displayName(r)} back in the herd?`)) return;
@@ -422,7 +429,8 @@ const retireDialog = (r) => {
 // ---- Pedigree PDF: made on the phone and handed to the share sheet for Messages, Mail or AirDrop ----
 
 const sharePedigree = async (r) => {
-  const blob = pedigreePdf(r, { displayName, fmtDate, fmtCoi, coi, pedigreeColumns, repeatsIn, rabbitry: RABBITRY });
+  const photo = photoCache.get(r.photo_id);
+  const blob = pedigreePdf(r, { displayName, fmtDate, fmtCoi, coi, pedigreeColumns, repeatsIn, rabbitry: RABBITRY, photo: photo?.dataUrl && photo });
   const filename = `${displayName(r).replace(/[^\w\s'&-]+/g, "").trim() || "Rabbit"} pedigree.pdf`;
   const file = new File([blob], filename, { type: "application/pdf" });
   if (navigator.canShare?.({ files: [file] })) {
@@ -440,6 +448,159 @@ const sharePedigree = async (r) => {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60e3);
+};
+
+// ---- Photos: any number per rabbit, dated so older photos sit in order ----
+
+// Main photos ready for the PDF. Loaded when the rabbit's page opens, since iPhones only allow the share
+// sheet straight after a tap and there's no time to fetch the photo then.
+const photoCache = new Map();
+
+// Age on a given date, e.g. "8 wk" or "1 yr 2 mo"
+const ageOn = (dob, date) => {
+  if (!dob || !date) return "";
+  const days = Math.round((parseDate(date) - parseDate(dob)) / 86400e3);
+  if (days < 0) return "";
+  if (days < 7 * 12) return `${Math.floor(days / 7)} wk`;
+  const months = Math.floor(days / 30.44);
+  if (months < 12) return `${months} mo`;
+  return months % 12 ? `${Math.floor(months / 12)} yr ${months % 12} mo` : `${Math.floor(months / 12)} yr`;
+};
+
+const photosOf = (r) => photos.filter((p) => p.rabbit_id === r.id).sort((a, b) => (b.taken_on || "").localeCompare(a.taken_on || "") || b.id - a.id);
+
+const photoLabel = (p, r) =>
+  [p.kind === "pedigree" ? "Pedigree" : "", p.taken_on && fmtDate(p.taken_on), p.kind === "photo" && ageOn(r.dob, p.taken_on) && `age ${ageOn(r.dob, p.taken_on)}`]
+    .filter(Boolean)
+    .join(" · ") || "No date";
+
+const photoSection = (r) => {
+  const list = photosOf(r);
+  return `<section>
+    <div class="title-row"><h2>Photos ${list.length ? `<span class="count">${list.length}</span>` : ""}</h2>
+      <div class="actions"><label class="button">+ Add photos<input type="file" id="add-photos" accept="image/*" multiple hidden></label></div></div>
+    <p class="muted small" id="photo-status" role="status" ${list.length ? "hidden" : ""}>${
+      list.length ? "" : "No photos yet. Add as many as you like, older ones too: the date is read from each photo where it can be, and you can change it."
+    }</p>
+    ${
+      list.length
+        ? `<div class="photo-grid">${list
+            .map(
+              (p) => `<button type="button" class="photo-thumb ${p.id === r.photo_id ? "main" : ""}" data-photo="${p.id}">
+                <img src="${photoUrl(p.id, true)}" alt="${esc(p.caption || photoLabel(p, r))}" loading="lazy">
+                <span>${esc(photoLabel(p, r))}</span>${p.id === r.photo_id ? `<em>Main</em>` : ""}</button>`
+            )
+            .join("")}</div>`
+        : ""
+    }
+  </section>`;
+};
+
+const wirePhotos = (r) => {
+  if (r.photo_id && !photoCache.has(r.photo_id)) photoDataUrl(r.photo_id).then((p) => photoCache.set(r.photo_id, p)).catch(() => {});
+  document.querySelectorAll("[data-photo]").forEach((el) => el.addEventListener("click", () => photoViewer(r, Number(el.dataset.photo))));
+
+  document.getElementById("add-photos").addEventListener("change", async (e) => {
+    const files = [...e.target.files];
+    const status = document.getElementById("photo-status");
+    status.hidden = false;
+    let failed = 0;
+    for (const [i, file] of files.entries()) {
+      status.innerHTML = `<span class="spinner" aria-hidden="true"></span> Adding photo ${i + 1} of ${files.length}…`;
+      try {
+        await uploadPhoto(r.id, file, { takenOn: (await exifDate(file)) || toISO(new Date()) });
+      } catch (err) {
+        failed++;
+        status.textContent = err.message;
+      }
+    }
+    await load();
+    viewRabbit(r.id);
+    if (failed) alert(`${failed} of ${files.length} photos couldn't be added.`);
+  });
+};
+
+// Full-size viewer with the date and caption to edit, swipe-free prev/next, main photo and delete
+const photoViewer = (r, photoId) => {
+  const list = photosOf(r);
+  let index = Math.max(0, list.findIndex((p) => p.id === photoId));
+  const dialog = document.createElement("dialog");
+  dialog.className = "dialog lightbox";
+  document.body.append(dialog);
+
+  const render = () => {
+    const p = list[index];
+    const isMain = p.id === r.photo_id;
+    dialog.innerHTML = `
+      <div class="lightbox-image">
+        <img src="${photoUrl(p.id)}" alt="${esc(p.caption || photoLabel(p, r))}">
+        ${list.length > 1 ? `<button type="button" class="nav prev" aria-label="Previous photo">‹</button><button type="button" class="nav next" aria-label="Next photo">›</button>` : ""}
+      </div>
+      <form class="form lightbox-form">
+        <p class="muted small">${index + 1} of ${list.length}${p.taken_on && r.dob && p.kind === "photo" ? ` · ${esc(displayName(r))} was ${ageOn(r.dob, p.taken_on)} old` : ""}</p>
+        <div class="form-grid">
+          ${field("Taken on", "taken_on", p.taken_on, 'type="date"')}
+          <label>Type<select name="kind"><option value="photo" ${p.kind === "photo" ? "selected" : ""}>Photo</option><option value="pedigree" ${p.kind === "pedigree" ? "selected" : ""}>Pedigree</option></select></label>
+        </div>
+        ${field("Caption", "caption", p.caption, 'placeholder="e.g. Best of breed, spring show"')}
+        <p class="error" hidden></p>
+        <div class="form-actions">
+          <button class="button primary" type="submit">Save</button>
+          ${isMain || p.kind !== "photo" ? "" : `<button class="button" type="button" data-act="main">Make main photo</button>`}
+          <button class="button" type="button" data-act="close">Close</button>
+          <button class="button danger" type="button" data-act="delete">Delete</button>
+        </div>
+      </form>`;
+    const error = dialog.querySelector(".error");
+    const run = async (fn) => {
+      try {
+        await fn();
+      } catch (err) {
+        error.textContent = err.message;
+        error.hidden = false;
+      }
+    };
+    dialog.querySelector(".prev")?.addEventListener("click", () => ((index = (index - 1 + list.length) % list.length), render()));
+    dialog.querySelector(".next")?.addEventListener("click", () => ((index = (index + 1) % list.length), render()));
+    dialog.querySelector('[data-act="close"]').addEventListener("click", () => dialog.close());
+    dialog.querySelector('[data-act="main"]')?.addEventListener("click", () =>
+      run(async () => {
+        await api("PUT", `/api/rabbits/${r.id}`, { photo_id: p.id });
+        r.photo_id = p.id;
+        dialog.dataset.changed = "1";
+        render();
+      })
+    );
+    dialog.querySelector('[data-act="delete"]').addEventListener("click", () =>
+      run(async () => {
+        if (!confirm("Delete this photo for good?")) return;
+        await api("DELETE", `/api/photos/${p.id}`);
+        dialog.dataset.changed = "1";
+        list.splice(index, 1);
+        if (!list.length) return dialog.close();
+        index = Math.min(index, list.length - 1);
+        render();
+      })
+    );
+    dialog.querySelector("form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      run(async () => {
+        Object.assign(p, await api("PUT", `/api/photos/${p.id}`, Object.fromEntries(new FormData(e.target))));
+        dialog.dataset.changed = "1";
+        dialog.close();
+      });
+    });
+  };
+
+  dialog.addEventListener("close", async () => {
+    dialog.remove();
+    if (dialog.dataset.changed) {
+      await load();
+      viewRabbit(r.id);
+    }
+  });
+  render();
+  dialog.showModal();
 };
 
 // ---- Add and edit ----
@@ -857,6 +1018,7 @@ const viewScan = () => {
       <h2>Parents</h2>${["S", "D"].map(card).join("")}
       <h2>Grandparents</h2>${["SS", "SD", "DS", "DD"].map(card).join("")}
       <h2>Great-grandparents</h2>${["SSS", "SSD", "SDS", "SDD", "DSS", "DSD", "DDS", "DDD"].map(card).join("")}
+      <label class="check"><input type="checkbox" name="keep-photo" checked> Keep this pedigree photo with the rabbit</label>
       <p class="error" id="scan-error" role="alert" hidden></p>
       <div class="form-actions sticky-actions">
         <button class="button primary" type="submit">Save</button>
@@ -922,6 +1084,10 @@ const viewScan = () => {
         });
         ids[slot] = saved.id;
         if (key) madeThisScan.set(key, saved.id);
+      }
+      if (data["keep-photo"] && ids.self) {
+        const blob = await (await fetch(photo)).blob();
+        await uploadPhoto(ids.self, blob, { takenOn: toISO(new Date()), caption: "Scanned pedigree", kind: "pedigree" }).catch(() => {});
       }
       await load();
       scan = null;

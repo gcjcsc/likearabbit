@@ -1,10 +1,11 @@
 // MCF herd and pedigree app: a password-protected JSON API over the D1 database, plus the static app in ./public
 
 import { scanPedigree } from "./scan.js";
+import { photoRoutes, deleteRabbitPhotos } from "./photos.js";
 
-const RABBIT_FIELDS = ["name", "ear", "tattoo", "sex", "breed", "color", "genotype", "weight", "dob", "reg", "gc", "legs", "breeder", "status", "acquired", "notes", "sire_id", "dam_id", "litter_id", "left_on", "left_reason", "left_to", "price"];
+const RABBIT_FIELDS = ["name", "ear", "tattoo", "sex", "breed", "color", "genotype", "weight", "dob", "reg", "gc", "legs", "breeder", "status", "acquired", "notes", "sire_id", "dam_id", "litter_id", "left_on", "left_reason", "left_to", "price", "photo_id"];
 const LITTER_FIELDS = ["sire_id", "dam_id", "bred_on", "kindled_on", "born", "alive", "notes"];
-const ID_FIELDS = new Set(["sire_id", "dam_id", "litter_id"]);
+const ID_FIELDS = new Set(["sire_id", "dam_id", "litter_id", "photo_id"]);
 const COUNT_FIELDS = new Set(["born", "alive"]);
 
 // Pages and files the login page needs before anyone has signed in
@@ -134,11 +135,12 @@ const api = async (request, env, path) => {
   if (path === "/api/logout" && method === "POST") return logout();
 
   if (path === "/api/data" && method === "GET") {
-    const [rabbits, litters] = await env.DB.batch([
+    const [rabbits, litters, photos] = await env.DB.batch([
       env.DB.prepare("SELECT * FROM rabbits ORDER BY id"),
       env.DB.prepare("SELECT * FROM litters ORDER BY id"),
+      env.DB.prepare("SELECT * FROM photos ORDER BY taken_on, id"),
     ]);
-    return json({ rabbits: rabbits.results, litters: litters.results });
+    return json({ rabbits: rabbits.results, litters: litters.results, photos: photos.results });
   }
 
   if (path === "/api/scan" && method === "POST") {
@@ -152,12 +154,19 @@ const api = async (request, env, path) => {
   }
 
   if (path === "/api/export" && method === "GET") {
-    const [rabbits, litters] = await env.DB.batch([env.DB.prepare("SELECT * FROM rabbits ORDER BY id"), env.DB.prepare("SELECT * FROM litters ORDER BY id")]);
+    const [rabbits, litters, photos] = await env.DB.batch([
+      env.DB.prepare("SELECT * FROM rabbits ORDER BY id"),
+      env.DB.prepare("SELECT * FROM litters ORDER BY id"),
+      env.DB.prepare("SELECT * FROM photos ORDER BY id"),
+    ]);
     const date = new Date().toISOString().slice(0, 10);
-    return json({ exported: new Date().toISOString(), rabbits: rabbits.results, litters: litters.results }, 200, {
+    return json({ exported: new Date().toISOString(), rabbits: rabbits.results, litters: litters.results, photos: photos.results }, 200, {
       "Content-Disposition": `attachment; filename="mcf-herd-${date}.json"`,
     });
   }
+
+  const photoResponse = await photoRoutes(request, env, path);
+  if (photoResponse) return photoResponse;
 
   const match = path.match(/^\/api\/(rabbits|litters)(?:\/(\d+))?$/);
   if (!match) throw new HttpError(404, "Not found.");
@@ -171,7 +180,10 @@ const api = async (request, env, path) => {
     if (table === "rabbits") await checkNoLoop(env, id, data.sire_id, data.dam_id);
     return update(env, table, id, data);
   }
-  if (id && method === "DELETE") return remove(env, table, id);
+  if (id && method === "DELETE") {
+    if (table === "rabbits") await deleteRabbitPhotos(env, id);
+    return remove(env, table, id);
+  }
   throw new HttpError(405, "Method not allowed.");
 };
 

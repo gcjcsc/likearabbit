@@ -15,6 +15,13 @@
       "database_name": "likearabbit",
       "database_id": "57188787-c3de-4a15-80e3-b36f0aa8cab3",
       "migrations_dir": "migrations"
+    },
+    {
+      // Photo files only, kept apart so the herd database stays small (free plan: 500 MB per database)
+      "binding": "PHOTOS",
+      "database_name": "likearabbit-photos",
+      "database_id": "6102d109-9ba8-43b1-b174-0faaa6214b81",
+      "migrations_dir": "migrations-photos"
     }
   ],
   // Workers AI, for reading photos of paper pedigrees (src/scan.js)

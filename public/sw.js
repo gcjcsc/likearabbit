@@ -1,8 +1,8 @@
 // Keeps the app usable with no signal: everything is fetched fresh when online and the last good copy
 // is saved, so the herd (as of the last time it loaded) still opens offline. Saving changes needs a connection.
 
-const CACHE = "mcf-v3";
-const SHELL = ["/", "/app.js", "/styles.css", "/favicon.svg", "/manifest.webmanifest", "/icons/apple-touch-icon.png", "/pedigree-pdf.js", "/vendor/jspdf.umd.min.js"];
+const CACHE = "mcf-v4";
+const SHELL = ["/", "/app.js", "/styles.css", "/favicon.svg", "/manifest.webmanifest", "/icons/apple-touch-icon.png", "/pedigree-pdf.js", "/photos.js", "/vendor/jspdf.umd.min.js"];
 
 self.addEventListener("install", (event) => {
   // Signed-out installs get redirected to /login; skip those rather than caching the redirect
@@ -36,12 +36,23 @@ const networkFirst = async (request, cacheKey) => {
   }
 };
 
+// Photo bytes never change once uploaded, so a saved copy is always right
+const cacheFirst = async (request) => {
+  const cache = await caches.open(CACHE);
+  const saved = await cache.match(request);
+  if (saved) return saved;
+  const res = await fetch(request);
+  if (res.ok) cache.put(request, res.clone());
+  return res;
+};
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
   if (request.method !== "GET" || url.origin !== location.origin) return;
 
   if (url.pathname === "/api/data") return event.respondWith(networkFirst(request, "/api/data"));
+  if (url.pathname.startsWith("/api/photos/")) return event.respondWith(cacheFirst(request));
   if (url.pathname.startsWith("/api/") || url.pathname === "/login") return;
   // Every page of the app is the same document; the part after # picks the view
   if (request.mode === "navigate") return event.respondWith(networkFirst(request, "/"));
